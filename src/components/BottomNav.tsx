@@ -1,4 +1,4 @@
-import { Home, MessageSquare, Settings } from 'lucide-react';
+import { Home, Music, Calendar, Users } from 'lucide-react';
 import { View } from '../App';
 
 export default function BottomNav({ currentView, setCurrentView }: { currentView: View, setCurrentView: (v: View) => void }) {
@@ -8,13 +8,17 @@ export default function BottomNav({ currentView, setCurrentView }: { currentView
         <Home size={24} />
         <span className="text-[10px] font-bold">Inici</span>
       </button>
-      <button className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#d44211]">
-        <MessageSquare size={24} />
-        <span className="text-[10px] font-bold">Missatges</span>
+      <button onClick={() => setCurrentView('repertoire')} className={`flex flex-col items-center gap-1 ${currentView === 'repertoire' ? 'text-[#d44211]' : 'text-slate-400'}`}>
+        <Music size={24} />
+        <span className="text-[10px] font-bold">Repertori</span>
       </button>
-      <button className="flex flex-col items-center gap-1 text-slate-400 hover:text-[#d44211]">
-        <Settings size={24} />
-        <span className="text-[10px] font-bold">Configuració</span>
+      <button onClick={() => setCurrentView('calendar')} className={`flex flex-col items-center gap-1 ${currentView === 'calendar' ? 'text-[#d44211]' : 'text-slate-400'}`}>
+        <Calendar size={24} />
+        <span className="text-[10px] font-bold">Calendari</span>
+      </button>
+      <button onClick={() => setCurrentView('rehearsal')} className={`flex flex-col items-center gap-1 ${currentView === 'rehearsal' ? 'text-[#d44211]' : 'text-slate-400'}`}>
+        <Users size={24} />
+        <span className="text-[10px] font-bold">Assajos</span>
       </button>
     </div>
   );

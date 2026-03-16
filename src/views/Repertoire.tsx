@@ -1,24 +1,27 @@
-import { useState, useEffect } from 'react';
-import { Search, Filter, FileText, Headphones, PlayCircle, Music, Clock, User, Plus, X, Upload } from 'lucide-react';
-import { collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import React, { useState, useEffect } from 'react';
+import { Search, FileText, Headphones, PlayCircle, Plus, X, Upload } from 'lucide-react';
+import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
 interface RepertoireProps {
   user: UserData;
 }
 
+interface SongPdf {
+  instrument: string;
+  url: string;
+}
+
 interface Song {
-  id: string;
+  id: number;
   title: string;
   composer: string;
   style: string;
-  pdfUrl: string;
+  pdfs?: SongPdf[];
   mp3Url: string;
   youtubeUrl: string;
   addedBy: string;
-  createdAt: any;
+  createdAt: string;
 }
 
 export default function Repertoire({ user }: RepertoireProps) {
@@ -28,7 +31,6 @@ export default function Repertoire({ user }: RepertoireProps) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
-  // New song form state
   const [newSong, setNewSong] = useState({
     title: '',
     composer: '',
@@ -36,23 +38,38 @@ export default function Repertoire({ user }: RepertoireProps) {
     youtubeUrl: ''
   });
   
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfFiles, setPdfFiles] = useState<{ instrument: string, file: File }[]>([]);
   const [mp3File, setMp3File] = useState<File | null>(null);
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'songs'), (snapshot) => {
-      const songsData: Song[] = [];
-      snapshot.forEach((doc) => {
-        songsData.push({ id: doc.id, ...doc.data() } as Song);
-      });
-      setSongs(songsData);
-      setLoading(false);
-    }, (error) => {
+  const fetchSongs = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('songs')
+      .select('*')
+      .order('createdAt', { ascending: false });
+    
+    if (error) {
       console.error("Error fetching songs:", error);
-      setLoading(false);
-    });
+    } else {
+      setSongs(data || []);
+    }
+    setLoading(false);
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    fetchSongs();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('public:songs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'songs' }, () => {
+        fetchSongs();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleAddSong = async (e: React.FormEvent) => {
@@ -61,32 +78,55 @@ export default function Repertoire({ user }: RepertoireProps) {
 
     setUploading(true);
     try {
-      let pdfUrl = '';
+      let pdfs: SongPdf[] = [];
       let mp3Url = '';
 
-      if (pdfFile) {
-        const pdfRef = ref(storage, `repertoire/${Date.now()}_${pdfFile.name}`);
-        await uploadBytes(pdfRef, pdfFile);
-        pdfUrl = await getDownloadURL(pdfRef);
+      for (const pdf of pdfFiles) {
+        if (pdf.file.size === 0) continue;
+        
+        const fileName = `${Date.now()}_${pdf.file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('repertoire')
+          .upload(fileName, pdf.file);
+          
+        if (uploadError) throw uploadError;
+        
+        const { data: urlData } = supabase.storage
+          .from('repertoire')
+          .getPublicUrl(fileName);
+          
+        pdfs.push({ instrument: pdf.instrument, url: urlData.publicUrl });
       }
 
       if (mp3File) {
-        const mp3Ref = ref(storage, `repertoire/${Date.now()}_${mp3File.name}`);
-        await uploadBytes(mp3Ref, mp3File);
-        mp3Url = await getDownloadURL(mp3Ref);
+        const fileName = `${Date.now()}_${mp3File.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('repertoire')
+          .upload(fileName, mp3File);
+          
+        if (uploadError) throw uploadError;
+        
+        const { data: urlData } = supabase.storage
+          .from('repertoire')
+          .getPublicUrl(fileName);
+        mp3Url = urlData.publicUrl;
       }
 
-      await addDoc(collection(db, 'songs'), {
-        ...newSong,
-        pdfUrl,
-        mp3Url,
-        addedBy: user.name,
-        createdAt: new Date().toISOString()
-      });
+      const { error: insertError } = await supabase
+        .from('songs')
+        .insert([{
+          ...newSong,
+          pdfs,
+          mp3Url,
+          addedBy: user.name,
+          createdAt: new Date().toISOString()
+        }]);
+      
+      if (insertError) throw insertError;
       
       setIsAdding(false);
       setNewSong({ title: '', composer: '', style: '', youtubeUrl: '' });
-      setPdfFile(null);
+      setPdfFiles([]);
       setMp3File(null);
     } catch (error) {
       console.error("Error adding song:", error);
@@ -165,22 +205,30 @@ export default function Repertoire({ user }: RepertoireProps) {
                         {song.composer} {song.style && <span className="text-slate-400">/ {song.style}</span>}
                       </td>
                       <td className="px-6 py-6">
-                        <div className="flex justify-end gap-2">
-                          {song.pdfUrl ? (
-                            <a href={song.pdfUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
-                              <FileText size={14} /> PDF
-                            </a>
-                          ) : <span className="px-3 py-2 bg-slate-100 text-slate-400 rounded-lg text-xs font-bold cursor-not-allowed">N/A</span>}
-                          {song.mp3Url ? (
-                            <a href={song.mp3Url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
-                              <Headphones size={14} /> MP3
-                            </a>
-                          ) : <span className="px-3 py-2 bg-slate-100 text-slate-400 rounded-lg text-xs font-bold cursor-not-allowed">N/A</span>}
-                          {song.youtubeUrl ? (
-                            <a href={song.youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
-                              <PlayCircle size={14} /> YouTube
-                            </a>
-                          ) : <span className="px-3 py-2 bg-slate-100 text-slate-400 rounded-lg text-xs font-bold cursor-not-allowed">N/A</span>}
+                        <div className="flex flex-col gap-2 items-end">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {song.pdfs && song.pdfs.length > 0 ? (
+                              song.pdfs.map((pdf, idx) => (
+                                <a key={idx} href={pdf.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
+                                  <FileText size={14} /> {pdf.instrument}
+                                </a>
+                              ))
+                            ) : (
+                              <span className="px-3 py-2 bg-slate-100 text-slate-400 rounded-lg text-xs font-bold cursor-not-allowed">Sense PDF</span>
+                            )}
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            {song.mp3Url ? (
+                              <a href={song.mp3Url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
+                                <Headphones size={14} /> MP3
+                              </a>
+                            ) : null}
+                            {song.youtubeUrl ? (
+                              <a href={song.youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
+                                <PlayCircle size={14} /> YouTube
+                              </a>
+                            ) : null}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -222,19 +270,71 @@ export default function Repertoire({ user }: RepertoireProps) {
                   <p className="text-sm text-slate-500 mb-4">Puja els arxius o afegeix enllaços</p>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-1">Partitura (PDF)</label>
-                      <div className="flex items-center gap-2">
-                        <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 p-3 border border-dashed border-slate-300 rounded-xl hover:border-[#d44211] hover:bg-[#d44211]/5 transition-colors">
-                          <Upload size={18} className="text-slate-400" />
-                          <span className="text-sm text-slate-600">{pdfFile ? pdfFile.name : 'Seleccionar PDF'}</span>
-                          <input type="file" accept=".pdf" className="hidden" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
-                        </label>
-                        {pdfFile && (
-                          <button type="button" onClick={() => setPdfFile(null)} className="p-3 text-red-500 hover:bg-red-50 rounded-xl">
-                            <X size={18} />
-                          </button>
-                        )}
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-bold text-slate-700">Partitures (PDF) per Instrument</label>
+                        <button 
+                          type="button"
+                          onClick={() => setPdfFiles([...pdfFiles, { instrument: 'General', file: new File([], '') }])}
+                          className="text-xs font-bold text-[#d44211] hover:text-[#d44211]/80 flex items-center gap-1"
+                        >
+                          <Plus size={14} /> Afegir PDF
+                        </button>
                       </div>
+                      
+                      {pdfFiles.length === 0 ? (
+                        <div className="text-sm text-slate-500 italic p-3 border border-dashed border-slate-300 rounded-xl text-center">
+                          No s'ha afegit cap partitura. Clica a "Afegir PDF" per pujar-ne una.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {pdfFiles.map((pdfItem, index) => (
+                            <div key={index} className="flex items-center gap-2 p-3 border border-slate-200 rounded-xl bg-slate-50">
+                              <div className="flex-1 space-y-2">
+                                <input 
+                                  type="text" 
+                                  placeholder="Instrument (ex: Gralla 1, Timbal...)" 
+                                  value={pdfItem.instrument}
+                                  onChange={(e) => {
+                                    const newFiles = [...pdfFiles];
+                                    newFiles[index].instrument = e.target.value;
+                                    setPdfFiles(newFiles);
+                                  }}
+                                  className="w-full p-2 text-sm border border-slate-200 rounded-lg focus:ring-[#d44211] focus:border-[#d44211]"
+                                />
+                                <label className="cursor-pointer flex items-center justify-center gap-2 p-2 border border-dashed border-slate-300 rounded-lg hover:border-[#d44211] hover:bg-[#d44211]/5 transition-colors bg-white">
+                                  <Upload size={16} className="text-slate-400" />
+                                  <span className="text-sm text-slate-600 truncate max-w-[200px]">
+                                    {pdfItem.file.name || 'Seleccionar PDF'}
+                                  </span>
+                                  <input 
+                                    type="file" 
+                                    accept=".pdf" 
+                                    className="hidden" 
+                                    onChange={(e) => {
+                                      if (e.target.files?.[0]) {
+                                        const newFiles = [...pdfFiles];
+                                        newFiles[index].file = e.target.files[0];
+                                        setPdfFiles(newFiles);
+                                      }
+                                    }} 
+                                  />
+                                </label>
+                              </div>
+                              <button 
+                                type="button" 
+                                onClick={() => {
+                                  const newFiles = [...pdfFiles];
+                                  newFiles.splice(index, 1);
+                                  setPdfFiles(newFiles);
+                                }} 
+                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg self-start"
+                              >
+                                <X size={18} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-1">Àudio (MP3)</label>

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, CheckCircle, MoreVertical, XCircle, Home, Calendar, Users, Archive } from 'lucide-react';
-import { collection, onSnapshot, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
 interface AdminProps {
@@ -9,9 +8,11 @@ interface AdminProps {
 }
 
 interface AppEvent {
-  id: string;
+  id: number;
   title: string;
   date: string;
+  type: string;
+  isPublished?: boolean;
 }
 
 interface Member {
@@ -22,75 +23,156 @@ interface Member {
   avatar: string;
 }
 
-interface AttendanceRecord {
-  userId: string;
-  status: string;
-}
-
 export default function Admin({ user }: AdminProps) {
   const [events, setEvents] = useState<AppEvent[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
-  const [attendances, setAttendances] = useState<Record<string, string>>({});
+  const [attendances, setAttendances] = useState<Record<string, {status: string, convocat: boolean}>>({});
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Fetch future events
-    const unsubscribeEvents = onSnapshot(collection(db, 'events'), (snapshot) => {
-      const eventsData: AppEvent[] = [];
-      const now = new Date().getTime();
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (new Date(data.date).getTime() > now - 86400000) {
-          eventsData.push({ id: doc.id, title: data.title, date: data.date });
-        }
-      });
-      eventsData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      setEvents(eventsData);
-      if (eventsData.length > 0 && !selectedEventId) {
-        setSelectedEventId(eventsData[0].id);
+  const fetchEvents = async () => {
+    const now = new Date().getTime();
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .eq('type', 'Actuació')
+      .gte('date', new Date(now - 86400000).toISOString())
+      .order('date', { ascending: true });
+    if (error) console.error("Error fetching events:", error);
+    else {
+      setEvents(data || []);
+      if (data && data.length > 0 && !selectedEventId) {
+        setSelectedEventId(data[0].id);
       }
-    });
+    }
+  };
 
-    // Fetch all users
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const usersData: Member[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        usersData.push({
-          uid: doc.id,
-          name: data.name,
-          role: data.role === 'admin' ? 'Administrador' : 'Membre',
-          instrument: data.instrument || 'Sense assignar',
-          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name)}&background=d44211&color=fff`
-        });
+  const fetchMembers = async () => {
+    const { data, error } = await supabase.from('users').select('*');
+    if (error) console.error("Error fetching members:", error);
+    else {
+      setMembers((data || []).map(d => ({
+        uid: d.uid,
+        name: d.name,
+        role: d.role === 'admin' ? 'Administrador' : 'Membre',
+        instrument: d.instrument || 'Sense assignar',
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(d.name)}&background=d44211&color=fff`
+      })));
+    }
+  };
+
+  const fetchAttendances = async () => {
+    if (!selectedEventId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('attendances')
+      .select('*')
+      .eq('eventId', selectedEventId);
+    if (error) console.error("Error fetching attendances:", error);
+    else {
+      const attendanceData: Record<string, {status: string, convocat: boolean}> = {};
+      data?.forEach(d => {
+        attendanceData[d.userId] = {
+          status: d.status,
+          convocat: d.convocat || false
+        };
       });
-      setMembers(usersData);
-    });
+      setAttendances(attendanceData);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchEvents();
+    fetchMembers();
+
+    const eventsChannel = supabase.channel('public:events').on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, fetchEvents).subscribe();
+    const usersChannel = supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchMembers).subscribe();
 
     return () => {
-      unsubscribeEvents();
-      unsubscribeUsers();
+      supabase.removeChannel(eventsChannel);
+      supabase.removeChannel(usersChannel);
     };
   }, []);
 
   useEffect(() => {
-    if (!selectedEventId) return;
-
-    setLoading(true);
-    const q = query(collection(db, 'attendances'), where("eventId", "==", selectedEventId));
-    const unsubscribeAttendances = onSnapshot(q, (snapshot) => {
-      const attendanceData: Record<string, string> = {};
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        attendanceData[data.userId] = data.status;
-      });
-      setAttendances(attendanceData);
-      setLoading(false);
-    });
-
-    return () => unsubscribeAttendances();
+    fetchAttendances();
+    const attendancesChannel = supabase.channel('public:attendances').on('postgres_changes', { event: '*', schema: 'public', table: 'attendances' }, fetchAttendances).subscribe();
+    return () => { supabase.removeChannel(attendancesChannel); };
   }, [selectedEventId]);
+
+  const handleAttendanceChange = async (userId: string, newStatus: string) => {
+    if (!selectedEventId) return;
+    try {
+      const { error } = await supabase.from('attendances').upsert({
+        eventId: selectedEventId,
+        userId: userId,
+        status: newStatus,
+        convocat: attendances[userId]?.convocat || false,
+        updatedAt: new Date().toISOString()
+      }, { onConflict: 'eventId, userId' });
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error updating attendance:", error);
+      alert("Error en actualitzar l'assistència.");
+    }
+  };
+
+  const handleConvocatChange = async (userId: string, convocat: boolean) => {
+    if (!selectedEventId) return;
+    try {
+      const { error } = await supabase.from('attendances').upsert({
+        eventId: selectedEventId,
+        userId: userId,
+        status: attendances[userId]?.status || 'Pendent',
+        convocat: convocat,
+        updatedAt: new Date().toISOString()
+      }, { onConflict: 'eventId, userId' });
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error updating convocat:", error);
+      alert("Error en actualitzar la convocatòria.");
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!selectedEventId) return;
+    try {
+      const { error: eventError } = await supabase
+        .from('events')
+        .update({ isPublished: true })
+        .eq('id', selectedEventId);
+      if (eventError) throw eventError;
+
+      const event = events.find(e => e.id === selectedEventId);
+      const eventTitle = event?.title || 'Actuació';
+
+      const notifications = combinedData
+        .filter(m => m.convocat)
+        .map(m => ({
+          userId: m.uid,
+          title: 'Convocatòria Confirmada',
+          message: `Has estat convocat per a l'actuació: ${eventTitle}. Revisa el calendari.`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          link: 'calendar',
+          eventId: selectedEventId
+        }));
+
+      if (notifications.length > 0) {
+        const { error: notifError } = await supabase.from('notifications').insert(notifications);
+        if (notifError) throw notifError;
+      }
+
+      alert("S'ha publicat la llista i enviat les notificacions als músics convocats.");
+    } catch (error) {
+      console.error("Error publishing event:", error);
+      alert("Error en publicar la llista.");
+    }
+  };
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
@@ -102,14 +184,16 @@ export default function Admin({ user }: AdminProps) {
 
   const combinedData = members.map(m => ({
     ...m,
-    status: attendances[m.uid] || 'Pendent',
-    checked: attendances[m.uid] === 'Vull anar-hi'
+    status: attendances[m.uid]?.status || 'Pendent',
+    convocat: attendances[m.uid]?.convocat || false
   }));
 
-  const totalVoluntaris = combinedData.filter(m => m.status === 'Vull anar-hi').length;
-  const dolcaines = combinedData.filter(m => m.status === 'Vull anar-hi' && m.instrument.toLowerCase().includes('dolçaina')).length;
-  const tabals = combinedData.filter(m => m.status === 'Vull anar-hi' && m.instrument.toLowerCase().includes('tabal')).length;
-  const percussio = combinedData.filter(m => m.status === 'Vull anar-hi' && !m.instrument.toLowerCase().includes('dolçaina') && !m.instrument.toLowerCase().includes('tabal')).length;
+  const totalVoluntaris = combinedData.filter(m => m.convocat).length;
+  const dolcaines = combinedData.filter(m => m.convocat && m.instrument.toLowerCase().includes('dolçaina')).length;
+  const tabals = combinedData.filter(m => m.convocat && m.instrument.toLowerCase().includes('tabal')).length;
+  const percussio = combinedData.filter(m => m.convocat && !m.instrument.toLowerCase().includes('dolçaina') && !m.instrument.toLowerCase().includes('tabal')).length;
+
+  const selectedEvent = events.find(e => e.id === selectedEventId);
 
   return (
     <div className="flex flex-col lg:flex-row min-h-full">
@@ -137,18 +221,25 @@ export default function Admin({ user }: AdminProps) {
       <div className="flex-1 p-6 md:p-8 flex flex-col gap-8 pb-24 md:pb-8">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Gestió de Convocatòria</h2>
-            <p className="text-slate-500">Revisió de disponibilitat i confirmació final</p>
+            <div className="flex items-center gap-3">
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">Gestió de Convocatòria</h2>
+              {selectedEvent?.isPublished && (
+                <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
+                  <CheckCircle size={12} /> Publicat
+                </span>
+              )}
+            </div>
+            <p className="text-slate-500">Revisió de disponibilitat i confirmació final per a les actuacions</p>
           </div>
           <div className="relative min-w-[300px]">
-            <label className="text-xs font-bold text-[#d44211] uppercase mb-1 block">Selecciona l'esdeveniment</label>
+            <label className="text-xs font-bold text-[#d44211] uppercase mb-1 block">Selecciona l'actuació</label>
             <div className="relative">
               <select 
                 value={selectedEventId}
                 onChange={(e) => setSelectedEventId(e.target.value)}
                 className="w-full bg-white border border-[#d44211]/20 rounded-lg px-4 py-2.5 text-sm appearance-none focus:ring-2 focus:ring-[#d44211] focus:border-[#d44211] outline-none"
               >
-                {events.length === 0 && <option value="">Cap esdeveniment proper</option>}
+                {events.length === 0 && <option value="">Cap actuació propera</option>}
                 {events.map(event => (
                   <option key={event.id} value={event.id}>
                     {event.title} - {formatDate(event.date)}
@@ -187,7 +278,7 @@ export default function Admin({ user }: AdminProps) {
         <div className="bg-white rounded-xl border border-[#d44211]/10 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-[#d44211]/10 flex flex-col sm:flex-row justify-between items-center gap-4">
             <h3 className="font-bold text-slate-900">Llistat d'Assistència</h3>
-            <button className="px-4 py-2 bg-[#d44211] text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#d44211]/90 transition-colors">
+            <button onClick={handlePublish} className="px-4 py-2 bg-[#d44211] text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#d44211]/90 transition-colors">
               <CheckCircle size={16} /> Confirmar Convocatòria
             </button>
           </div>
@@ -219,7 +310,12 @@ export default function Admin({ user }: AdminProps) {
                   combinedData.map((m) => (
                     <tr key={m.uid} className={`hover:bg-[#d44211]/5 transition-colors ${m.status === 'No puc' ? 'opacity-60' : ''}`}>
                       <td className="px-6 py-4 text-center">
-                        <input type="checkbox" checked={m.checked} readOnly className="w-5 h-5 rounded border-[#d44211]/30 text-[#d44211] focus:ring-[#d44211] cursor-pointer" />
+                        <input 
+                          type="checkbox" 
+                          checked={m.convocat} 
+                          onChange={(e) => handleConvocatChange(m.uid, e.target.checked)}
+                          className="w-5 h-5 rounded border-[#d44211]/30 text-[#d44211] focus:ring-[#d44211] cursor-pointer" 
+                        />
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -236,10 +332,19 @@ export default function Admin({ user }: AdminProps) {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className={`flex items-center gap-1.5 ${m.status === 'Vull anar-hi' ? 'text-emerald-500' : m.status === 'No puc' ? 'text-red-500' : 'text-slate-400'}`}>
-                          {m.status === 'Vull anar-hi' ? <CheckCircle size={16} /> : m.status === 'No puc' ? <XCircle size={16} /> : <div className="w-4 h-4 rounded-full border-2 border-slate-300"></div>}
-                          <span className="text-xs font-bold">{m.status}</span>
-                        </div>
+                        <select 
+                          value={m.status}
+                          onChange={(e) => handleAttendanceChange(m.uid, e.target.value)}
+                          className={`text-sm font-bold rounded-lg px-3 py-1.5 border-0 focus:ring-2 focus:ring-[#d44211] outline-none cursor-pointer ${
+                            m.status === 'Vull anar-hi' ? 'bg-green-100 text-green-700' : 
+                            m.status === 'No puc' ? 'bg-red-100 text-red-700' : 
+                            'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          <option value="Pendent">Pendent</option>
+                          <option value="Vull anar-hi">Vull anar-hi</option>
+                          <option value="No puc">No puc</option>
+                        </select>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button className="text-slate-400 hover:text-[#d44211] transition-colors">
@@ -266,7 +371,7 @@ export default function Admin({ user }: AdminProps) {
             <button className="flex-1 sm:flex-none px-6 py-3 border border-[#d44211]/50 text-[#d44211] font-bold rounded-lg hover:bg-[#d44211]/5 transition-colors">
               Guardar Esborrany
             </button>
-            <button className="flex-1 sm:flex-none px-6 py-3 bg-[#d44211] text-white font-bold rounded-lg shadow-lg shadow-[#d44211]/30 hover:bg-[#d44211]/90 transition-all">
+            <button onClick={handlePublish} className="flex-1 sm:flex-none px-6 py-3 bg-[#d44211] text-white font-bold rounded-lg shadow-lg shadow-[#d44211]/30 hover:bg-[#d44211]/90 transition-all">
               Publicar Llista
             </button>
           </div>

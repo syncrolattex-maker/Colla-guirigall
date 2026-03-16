@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Bell, Menu, Music, LogOut } from 'lucide-react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { Bell, Menu, Music, LogOut, X } from 'lucide-react';
+import { supabase } from './supabaseClient';
 import Login from './components/Login';
 import Dashboard from './views/Dashboard';
 import Repertoire from './views/Repertoire';
@@ -10,6 +8,7 @@ import CalendarView from './views/CalendarView';
 import Rehearsal from './views/Rehearsal';
 import Admin from './views/Admin';
 import BottomNav from './components/BottomNav';
+import NotificationBell from './components/NotificationBell';
 
 export type View = 'dashboard' | 'repertoire' | 'calendar' | 'rehearsal' | 'admin';
 
@@ -24,37 +23,76 @@ export interface UserData {
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [user, setUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            setUser(userDoc.data() as UserData);
-          } else {
-            // Fallback if user document isn't created yet by Login
-            setUser({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              name: firebaseUser.displayName || 'Nou Membre',
-              role: 'member',
-              instrument: 'Sense assignar'
-            });
-          }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
-        }
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        await fetchUserData(session.user);
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    };
+
+    checkUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        await fetchUserData(session.user);
       } else {
         setUser(null);
       }
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
+
+  const fetchUserData = async (authUser: any) => {
+    try {
+      let { data: userData, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('uid', authUser.id)
+        .single();
+
+      if (error && error.code === 'PGRST116') {
+        // User not found, create it
+        const newUser = {
+          uid: authUser.id,
+          email: authUser.email || '',
+          name: authUser.user_metadata.full_name || 'Nou Membre',
+          role: authUser.email === 'syncrolattex@gmail.com' ? 'admin' : 'member',
+          instrument: 'Sense assignar'
+        };
+        
+        const { data: insertedUser, error: insertError } = await supabase
+          .from('users')
+          .insert([newUser])
+          .select()
+          .single();
+          
+        if (insertError) throw insertError;
+        userData = insertedUser;
+      } else if (error) {
+        throw error;
+      }
+
+      // Force admin role for the owner email
+      if (authUser.email === 'syncrolattex@gmail.com') {
+        userData.role = 'admin';
+      }
+      setUser(userData);
+    } catch (error) {
+      console.error("Error fetching user data:", error);
+    }
+  };
 
   if (loading) {
     return (
@@ -68,15 +106,41 @@ export default function App() {
     return <Login />;
   }
 
-  const handleLogout = () => {
-    signOut(auth);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const handleUpdateInstrument = async (instrument: string) => {
+    if (!user) return;
+    setUpdatingProfile(true);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ instrument })
+        .eq('uid', user.uid);
+        
+      if (error) throw error;
+      setUser({ ...user, instrument });
+    } catch (error) {
+      console.error("Error updating instrument:", error);
+      alert("Error en actualitzar l'instrument.");
+    } finally {
+      setUpdatingProfile(false);
+    }
+  };
+
+  const handleNavigate = (view: View, eventId?: string) => {
+    setCurrentView(view);
+    if (eventId) {
+      setSelectedEventId(eventId);
+    }
   };
 
   const renderView = () => {
     switch (currentView) {
       case 'dashboard': return <Dashboard setView={setCurrentView} user={user} />;
       case 'repertoire': return <Repertoire user={user} />;
-      case 'calendar': return <CalendarView user={user} />;
+      case 'calendar': return <CalendarView user={user} selectedEventId={selectedEventId} setSelectedEventId={setSelectedEventId} />;
       case 'rehearsal': return <Rehearsal user={user} />;
       case 'admin': return user.role === 'admin' ? <Admin user={user} /> : <Dashboard setView={setCurrentView} user={user} />;
       default: return <Dashboard setView={setCurrentView} user={user} />;
@@ -107,12 +171,14 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button className="w-10 h-10 flex items-center justify-center rounded-full bg-[#d44211]/10 text-[#d44211] hover:bg-[#d44211]/20 transition-colors">
-            <Bell size={20} />
-          </button>
-          <div className="w-10 h-10 rounded-full bg-[#d44211]/20 border-2 border-[#d44211] overflow-hidden flex items-center justify-center text-[#d44211] font-bold">
+          <NotificationBell user={user} onNavigate={handleNavigate} />
+          <button 
+            onClick={() => setIsProfileOpen(true)}
+            className="w-10 h-10 rounded-full bg-[#d44211]/20 border-2 border-[#d44211] overflow-hidden flex items-center justify-center text-[#d44211] font-bold hover:bg-[#d44211]/30 transition-colors cursor-pointer"
+            title="El meu perfil"
+          >
             {user.name.charAt(0).toUpperCase()}
-          </div>
+          </button>
           <button onClick={handleLogout} className="w-10 h-10 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 transition-colors" title="Tancar sessió">
             <LogOut size={20} />
           </button>
@@ -140,6 +206,48 @@ export default function App() {
           {renderView()}
         </main>
       </div>
+
+      {/* Profile Modal */}
+      {isProfileOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-[#f8f6f6]">
+              <h3 className="text-xl font-bold text-slate-900">El meu perfil</h3>
+              <button onClick={() => setIsProfileOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Nom</label>
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-slate-900 font-medium">{user.name}</div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Correu</label>
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-slate-900 font-medium">{user.email}</div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">El meu instrument</label>
+                <select 
+                  value={user.instrument}
+                  onChange={(e) => handleUpdateInstrument(e.target.value)}
+                  disabled={updatingProfile}
+                  className="w-full p-3 border border-slate-200 rounded-xl focus:ring-[#d44211] focus:border-[#d44211] bg-white font-medium"
+                >
+                  <option value="Sense assignar">Sense assignar</option>
+                  <option value="Dolçaina">Dolçaina</option>
+                  <option value="Tabal">Tabal</option>
+                </select>
+              </div>
+            </div>
+            <div className="p-6 border-t border-slate-100 bg-[#f8f6f6] flex justify-end">
+              <button onClick={() => setIsProfileOpen(false)} className="px-6 py-3 bg-[#d44211] text-white font-bold rounded-xl hover:bg-[#d44211]/90 transition-colors shadow-lg shadow-[#d44211]/20">
+                Tancar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNav currentView={currentView} setCurrentView={setCurrentView} />
     </div>

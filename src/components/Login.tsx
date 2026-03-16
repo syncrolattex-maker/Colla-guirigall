@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth, db } from '../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { supabase } from '../supabaseClient';
 import { Music } from 'lucide-react';
 
 export default function Login() {
@@ -11,30 +9,19 @@ export default function Login() {
   const handleLogin = async () => {
     setLoading(true);
     setError('');
-    const provider = new GoogleAuthProvider();
+    
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
       
-      // Check if user exists in Firestore
-      const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
-      
-      if (!userSnap.exists()) {
-        // Create new user
-        await setDoc(userRef, {
-          uid: user.uid,
-          email: user.email,
-          name: user.displayName || 'Nou Membre',
-          role: 'member',
-          instrument: 'Sense assignar',
-          createdAt: new Date().toISOString()
-        });
-      }
+      if (error) throw error;
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Error en iniciar sessió');
-    } finally {
       setLoading(false);
     }
   };
@@ -56,7 +43,7 @@ export default function Login() {
           className="w-full py-3 px-4 bg-white border-2 border-slate-200 hover:border-[#d44211] text-slate-700 font-bold rounded-xl flex items-center justify-center gap-3 transition-colors disabled:opacity-50"
         >
           <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-          {loading ? 'Iniciant sessió...' : 'Continua amb Google'}
+          {loading ? 'Redirigint...' : 'Continua amb Google'}
         </button>
       </div>
     </div>

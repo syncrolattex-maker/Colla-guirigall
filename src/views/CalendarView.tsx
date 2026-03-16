@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, Users, Settings, MapPin, CheckCircle, Plus, X } from 'lucide-react';
-import { collection, onSnapshot, addDoc, doc, setDoc, query, where } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
 interface CalendarProps {
   user: UserData;
+  selectedEventId?: number | null;
+  setSelectedEventId?: (id: number | null) => void;
 }
 
 interface AppEvent {
-  id: string;
+  id: number;
   title: string;
   type: string;
   date: string;
@@ -17,19 +18,23 @@ interface AppEvent {
   notes: string;
   createdBy: string;
   createdAt: string;
+  isPublished?: boolean;
 }
 
 interface Attendance {
-  eventId: string;
+  eventId: number;
   userId: string;
   status: 'Vull anar-hi' | 'No puc' | 'Pendent';
+  convocat?: boolean;
 }
 
-export default function CalendarView({ user }: CalendarProps) {
+export default function CalendarView({ user, selectedEventId, setSelectedEventId }: CalendarProps) {
   const [events, setEvents] = useState<AppEvent[]>([]);
-  const [attendances, setAttendances] = useState<Record<string, Attendance>>({});
+  const [allAttendances, setAllAttendances] = useState<Record<number, Record<string, Attendance>>>({});
+  const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [viewingEvent, setViewingEvent] = useState<AppEvent | null>(null);
   const [newEvent, setNewEvent] = useState({
     title: '',
     type: 'Actuació',
@@ -38,46 +43,74 @@ export default function CalendarView({ user }: CalendarProps) {
     notes: ''
   });
 
-  useEffect(() => {
-    // Fetch events
-    const unsubscribeEvents = onSnapshot(collection(db, 'events'), (snapshot) => {
-      const eventsData: AppEvent[] = [];
-      snapshot.forEach((doc) => {
-        eventsData.push({ id: doc.id, ...doc.data() } as AppEvent);
-      });
-      // Sort by date ascending
-      eventsData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      setEvents(eventsData);
-      setLoading(false);
-    });
+  const fetchEvents = async () => {
+    const { data, error } = await supabase
+      .from('events')
+      .select('*')
+      .order('date', { ascending: true });
+    if (error) console.error("Error fetching events:", error);
+    else setEvents(data || []);
+    setLoading(false);
+  };
 
-    // Fetch user attendances
-    const q = query(collection(db, 'attendances'), where("userId", "==", user.uid));
-    const unsubscribeAttendances = onSnapshot(q, (snapshot) => {
-      const attData: Record<string, Attendance> = {};
-      snapshot.forEach((doc) => {
-        const data = doc.data() as Attendance;
-        attData[data.eventId] = data;
+  const fetchAttendances = async () => {
+    const { data, error } = await supabase.from('attendances').select('*');
+    if (error) console.error("Error fetching attendances:", error);
+    else {
+      const attData: Record<number, Record<string, Attendance>> = {};
+      data?.forEach(att => {
+        if (!attData[att.eventId]) attData[att.eventId] = {};
+        attData[att.eventId][att.userId] = att;
       });
-      setAttendances(attData);
-    });
+      setAllAttendances(attData);
+    }
+  };
+
+  const fetchUsers = async () => {
+    const { data, error } = await supabase.from('users').select('*');
+    if (error) console.error("Error fetching users:", error);
+    else setUsers(data || []);
+  };
+
+  useEffect(() => {
+    fetchEvents();
+    fetchAttendances();
+    fetchUsers();
+
+    const eventsChannel = supabase.channel('public:events').on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, fetchEvents).subscribe();
+    const attendancesChannel = supabase.channel('public:attendances').on('postgres_changes', { event: '*', schema: 'public', table: 'attendances' }, fetchAttendances).subscribe();
+    const usersChannel = supabase.channel('public:users').on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchUsers).subscribe();
 
     return () => {
-      unsubscribeEvents();
-      unsubscribeAttendances();
+      supabase.removeChannel(eventsChannel);
+      supabase.removeChannel(attendancesChannel);
+      supabase.removeChannel(usersChannel);
     };
-  }, [user.uid]);
+  }, []);
+
+  useEffect(() => {
+    if (selectedEventId && events.length > 0) {
+      const ev = events.find(e => e.id === selectedEventId);
+      if (ev) setViewingEvent(ev);
+    }
+  }, [selectedEventId, events]);
+
+  const closeEventModal = () => {
+    setViewingEvent(null);
+    if (setSelectedEventId) setSelectedEventId(null);
+  };
 
   const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEvent.title || !newEvent.date) return;
 
     try {
-      await addDoc(collection(db, 'events'), {
+      const { error } = await supabase.from('events').insert({
         ...newEvent,
         createdBy: user.name,
         createdAt: new Date().toISOString()
       });
+      if (error) throw error;
       setIsAdding(false);
       setNewEvent({ title: '', type: 'Actuació', date: '', location: '', notes: '' });
     } catch (error) {
@@ -86,15 +119,17 @@ export default function CalendarView({ user }: CalendarProps) {
     }
   };
 
-  const handleAttendance = async (eventId: string, status: 'Vull anar-hi' | 'No puc') => {
+  const handleAttendance = async (eventId: number, status: 'Vull anar-hi' | 'No puc' | 'Pendent', targetUserId: string = user.uid) => {
     try {
-      const attendanceId = `${eventId}_${user.uid}`;
-      await setDoc(doc(db, 'attendances', attendanceId), {
+      const currentConvocat = allAttendances[eventId]?.[targetUserId]?.convocat || false;
+      const { error } = await supabase.from('attendances').upsert({
         eventId,
-        userId: user.uid,
+        userId: targetUserId,
         status,
+        convocat: currentConvocat,
         updatedAt: new Date().toISOString()
-      });
+      }, { onConflict: 'eventId, userId' });
+      if (error) throw error;
     } catch (error) {
       console.error("Error updating attendance:", error);
       alert("Error en actualitzar l'assistència.");
@@ -110,26 +145,7 @@ export default function CalendarView({ user }: CalendarProps) {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8 pb-24 md:pb-8 flex flex-col md:flex-row gap-8">
-      <aside className="w-full md:w-64 flex flex-col gap-2 shrink-0">
-        <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-[#d44211] text-white cursor-pointer">
-          <CalendarIcon size={20} />
-          <p className="text-sm font-bold">Calendari</p>
-        </div>
-        <div className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-[#d44211]/5 text-slate-700 cursor-pointer transition-colors">
-          <Users size={20} className="text-slate-500" />
-          <p className="text-sm font-medium">Assajos</p>
-        </div>
-        <div className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-[#d44211]/5 text-slate-700 cursor-pointer transition-colors">
-          <Users size={20} className="text-slate-500" />
-          <p className="text-sm font-medium">Membres</p>
-        </div>
-        <div className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-[#d44211]/5 text-slate-700 cursor-pointer transition-colors">
-          <Settings size={20} className="text-slate-500" />
-          <p className="text-sm font-medium">Configuració</p>
-        </div>
-      </aside>
-
+    <div className="max-w-5xl mx-auto px-6 py-8 pb-24 md:pb-8">
       <div className="flex-1">
         <div className="flex border-b border-[#d44211]/10 mb-6 gap-8 justify-between items-center">
           <div className="flex gap-8">
@@ -163,7 +179,11 @@ export default function CalendarView({ user }: CalendarProps) {
         ) : (
           <div className="flex flex-col gap-6">
             {events.map(event => {
-              const myAttendance = attendances[event.id]?.status;
+              const eventAtts = allAttendances[event.id] || {};
+              const myAttendance = eventAtts[user.uid]?.status;
+              const amIConvocat = eventAtts[user.uid]?.convocat;
+              const confirmedCount = (Object.values(eventAtts) as Attendance[]).filter(a => a.status === 'Vull anar-hi').length;
+              const declinedCount = (Object.values(eventAtts) as Attendance[]).filter(a => a.status === 'No puc').length;
               
               return (
                 <div key={event.id} className="flex flex-col md:flex-row bg-white rounded-xl overflow-hidden shadow-sm border border-[#d44211]/5 hover:shadow-md transition-shadow">
@@ -191,7 +211,17 @@ export default function CalendarView({ user }: CalendarProps) {
                           <p className="text-sm text-slate-600 mt-2 italic">{event.notes}</p>
                         )}
                       </div>
-                      {myAttendance === 'Vull anar-hi' && (
+                      {event.isPublished && amIConvocat && myAttendance !== 'No puc' && (
+                        <span className="px-3 py-1 bg-[#d44211] text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-sm shadow-[#d44211]/20">
+                          <CheckCircle size={12} /> Convocat
+                        </span>
+                      )}
+                      {event.isPublished && !amIConvocat && myAttendance === 'Vull anar-hi' && (
+                        <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-full">
+                          No convocat
+                        </span>
+                      )}
+                      {!event.isPublished && myAttendance === 'Vull anar-hi' && (
                         <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
                           <CheckCircle size={12} /> Inscrit
                         </span>
@@ -207,21 +237,37 @@ export default function CalendarView({ user }: CalendarProps) {
                         </span>
                       )}
                     </div>
-                    <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
-                      {myAttendance === 'Vull anar-hi' ? (
-                        <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-200 transition-colors">
-                          Cancel·lar assistència
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                      <div className="flex gap-4 text-sm">
+                        <div className="flex items-center gap-1 text-green-600 font-medium">
+                          <CheckCircle size={16} /> {confirmedCount} inscrits
+                        </div>
+                        <div className="flex items-center gap-1 text-red-500 font-medium">
+                          <X size={16} /> {declinedCount} no vénen
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button 
+                          onClick={() => setViewingEvent(event)} 
+                          className="px-4 py-2 border border-slate-200 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-50 transition-colors"
+                        >
+                          Veure Detalls
                         </button>
-                      ) : (
-                        <>
-                          <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 border border-slate-200 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-50 transition-colors">
-                            No puc
+                        {myAttendance === 'Vull anar-hi' ? (
+                          <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-200 transition-colors">
+                            Cancel·lar assistència
                           </button>
-                          <button onClick={() => handleAttendance(event.id, 'Vull anar-hi')} className="px-6 py-2 bg-[#d44211] text-white font-bold rounded-lg text-sm hover:bg-[#d44211]/90 transition-colors shadow-sm shadow-[#d44211]/20">
-                            Vull anar-hi
-                          </button>
-                        </>
-                      )}
+                        ) : (
+                          <>
+                            <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 border border-slate-200 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-50 transition-colors">
+                              No puc
+                            </button>
+                            <button onClick={() => handleAttendance(event.id, 'Vull anar-hi')} className="px-6 py-2 bg-[#d44211] text-white font-bold rounded-lg text-sm hover:bg-[#d44211]/90 transition-colors shadow-sm shadow-[#d44211]/20">
+                              Vull anar-hi
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -230,6 +276,79 @@ export default function CalendarView({ user }: CalendarProps) {
           </div>
         )}
       </div>
+
+      {/* Event Details Modal */}
+      {viewingEvent && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-[#f8f6f6]">
+              <h3 className="text-xl font-bold text-slate-900">Detalls de l'esdeveniment</h3>
+              <button onClick={closeEventModal} className="text-slate-400 hover:text-slate-600">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              <div className="mb-6">
+                <div className="inline-block px-3 py-1 bg-[#d44211]/10 text-[#d44211] font-bold text-sm rounded-full mb-3">
+                  {viewingEvent.type}
+                </div>
+                <h2 className="text-2xl font-black text-slate-900 mb-2">{viewingEvent.title}</h2>
+                <div className="flex flex-col gap-2 text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon size={16} className="text-[#d44211]" />
+                    <span>{formatDate(viewingEvent.date)}</span>
+                  </div>
+                  {viewingEvent.location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin size={16} className="text-[#d44211]" />
+                      <span>{viewingEvent.location}</span>
+                    </div>
+                  )}
+                </div>
+                {viewingEvent.notes && (
+                  <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                    <p className="text-slate-700 whitespace-pre-wrap">{viewingEvent.notes}</p>
+                  </div>
+                )}
+              </div>
+
+              {viewingEvent.isPublished ? (
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <Users size={20} className="text-[#d44211]" />
+                    Llista de Convocats
+                  </h3>
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="grid grid-cols-2 bg-slate-50 p-3 border-b border-slate-200 font-bold text-sm text-slate-700">
+                      <div>Músic</div>
+                      <div>Instrument</div>
+                    </div>
+                    <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                      {users
+                        .filter(u => allAttendances[viewingEvent.id]?.[u.uid]?.convocat)
+                        .map(u => (
+                          <div key={u.uid} className="grid grid-cols-2 p-3 text-sm items-center">
+                            <div className="font-medium text-slate-900">{u.name}</div>
+                            <div className="text-slate-500">{u.instrument || 'Sense assignar'}</div>
+                          </div>
+                        ))}
+                      {users.filter(u => allAttendances[viewingEvent.id]?.[u.uid]?.convocat).length === 0 && (
+                        <div className="p-4 text-center text-slate-500 text-sm">
+                          Encara no hi ha cap músic convocat.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-center">
+                  La llista de convocats encara no s'ha publicat.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Event Modal */}
       {isAdding && (
