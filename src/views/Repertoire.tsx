@@ -109,14 +109,12 @@ export default function Repertoire({ user }: RepertoireProps) {
           <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-2">El nostre repertori</h1>
           <p className="text-slate-600 text-lg max-w-2xl">Arxiu digital de partitures, àudios i vídeos per als membres de la Colla.</p>
         </div>
-        {user.role === 'admin' && (
-          <button 
-            onClick={() => setIsAdding(true)}
-            className="px-6 py-3 bg-[#d44211] text-white font-bold rounded-xl hover:bg-[#d44211]/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#d44211]/20 whitespace-nowrap"
-          >
-            <Plus size={20} /> Nova Cançó
-          </button>
-        )}
+        <button 
+          onClick={() => setIsAdding(true)}
+          className="px-6 py-3 bg-[#d44211] text-white font-bold rounded-xl hover:bg-[#d44211]/90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#d44211]/20 whitespace-nowrap"
+        >
+          <Plus size={20} /> Nova Cançó
+        </button>
       </div>
 
       <div className="mb-8 flex flex-col md:flex-row gap-4 items-center">

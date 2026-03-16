@@ -84,8 +84,8 @@ service cloud.firestore {
 
     match /songs/{songId} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin() && isValidSong(request.resource.data);
-      allow update: if isAdmin() && isValidSong(request.resource.data);
+      allow create: if isAuthenticated() && isValidSong(request.resource.data);
+      allow update: if isAuthenticated() && isValidSong(request.resource.data);
       allow delete: if isAdmin();
     }
 
