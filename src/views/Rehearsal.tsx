@@ -14,7 +14,7 @@ interface AppEvent {
   date: string;
   location: string;
   notes: string;
-  repertoireIds?: number[];
+  repertoireids?: number[];
 }
 
 interface SongPdf {
@@ -50,7 +50,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
     const { data, error } = await supabase
       .from('events')
       .select('*')
-      .eq('type', 'Assaig')
+      .ilike('type', 'Assaig%')
       .gte('date', new Date(new Date().getTime() - 86400000).toISOString())
       .order('date', { ascending: true });
       
@@ -58,8 +58,8 @@ export default function Rehearsal({ user }: RehearsalProps) {
     else {
       const rehearsal = data && data.length > 0 ? data[0] : null;
       setNextRehearsal(rehearsal);
-      if (rehearsal && rehearsal.repertoireIds) {
-        setSelectedSongIds(rehearsal.repertoireIds);
+      if (rehearsal && rehearsal.repertoireids) {
+        setSelectedSongIds(rehearsal.repertoireids);
       } else {
         setSelectedSongIds([]);
       }
@@ -87,8 +87,8 @@ export default function Rehearsal({ user }: RehearsalProps) {
       const { data, error } = await supabase
         .from('attendances')
         .select('status')
-        .eq('eventId', nextRehearsal.id)
-        .eq('userId', user.uid)
+        .eq('eventid', nextRehearsal.id)
+        .eq('userid', user.uid)
         .single();
         
       if (error && error.code !== 'PGRST116') console.error("Error fetching attendance:", error);
@@ -102,11 +102,11 @@ export default function Rehearsal({ user }: RehearsalProps) {
     if (!nextRehearsal) return;
     try {
       const { error } = await supabase.from('attendances').upsert({
-        eventId: nextRehearsal.id,
-        userId: user.uid,
+        eventid: nextRehearsal.id,
+        userid: user.uid,
         status,
-        updatedAt: new Date().toISOString()
-      }, { onConflict: 'eventId, userId' });
+        updatedat: new Date().toISOString()
+      }, { onConflict: 'eventid, userid' });
       if (error) throw error;
       setAttendance(status);
     } catch (error) {
@@ -127,7 +127,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
     if (!nextRehearsal) return;
     try {
       const { error } = await supabase.from('events').update({
-        repertoireIds: selectedSongIds
+        repertoireids: selectedSongIds
       }).eq('id', nextRehearsal.id);
       if (error) throw error;
       setIsEditingRepertoire(false);
@@ -150,7 +150,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
     (song.composer && song.composer.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const rehearsalSongs = allSongs.filter(song => nextRehearsal?.repertoireIds?.includes(song.id));
+  const rehearsalSongs = allSongs.filter(song => nextRehearsal?.repertoireids?.includes(song.id));
 
   if (loading) {
     return (
