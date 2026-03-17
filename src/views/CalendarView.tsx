@@ -16,16 +16,17 @@ interface AppEvent {
   date: string;
   location: string;
   notes: string;
-  createdBy: string;
-  createdAt: string;
-  isPublished?: boolean;
+  createdby: string;
+  createdat: string;
+  ispublished?: boolean;
 }
 
 interface Attendance {
-  eventId: number;
-  userId: string;
+  eventid: number;
+  userid: string;
   status: 'Vull anar-hi' | 'No puc' | 'Pendent';
   convocat?: boolean;
+  updatedat?: string;
 }
 
 export default function CalendarView({ user, selectedEventId, setSelectedEventId }: CalendarProps) {
@@ -59,8 +60,8 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
     else {
       const attData: Record<number, Record<string, Attendance>> = {};
       data?.forEach(att => {
-        if (!attData[att.eventId]) attData[att.eventId] = {};
-        attData[att.eventId][att.userId] = att;
+        if (!attData[att.eventid]) attData[att.eventid] = {};
+        attData[att.eventid][att.userid] = att;
       });
       setAllAttendances(attData);
     }
@@ -107,13 +108,23 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
 
     try {
       const finalTitle = newEvent.title || newEvent.type;
+      console.log("Adding event...", { ...newEvent, title: finalTitle });
+      
       const { error } = await supabase.from('events').insert({
-        ...newEvent,
         title: finalTitle,
-        createdBy: user.name,
-        createdAt: new Date().toISOString()
+        type: newEvent.type,
+        date: newEvent.date,
+        location: newEvent.location,
+        notes: newEvent.notes,
+        createdby: user.name,
+        createdat: new Date().toISOString()
       });
-      if (error) throw error;
+      
+      if (error) {
+        console.error("DB Insert Error (events):", error);
+        throw error;
+      }
+      
       setIsAdding(false);
       setNewEvent({ title: '', type: 'Actuació', date: '', location: '', notes: '' });
     } catch (error) {
@@ -126,12 +137,12 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
     try {
       const currentConvocat = allAttendances[eventId]?.[targetUserId]?.convocat || false;
       const { error } = await supabase.from('attendances').upsert({
-        eventId,
-        userId: targetUserId,
+        eventid: eventId,
+        userid: targetUserId,
         status,
         convocat: currentConvocat,
-        updatedAt: new Date().toISOString()
-      }, { onConflict: 'eventId, userId' });
+        updatedat: new Date().toISOString()
+      }, { onConflict: 'eventid, userid' });
       if (error) throw error;
     } catch (error) {
       console.error("Error updating attendance:", error);
@@ -214,17 +225,17 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                           <p className="text-sm text-slate-600 mt-2 italic">{event.notes}</p>
                         )}
                       </div>
-                      {event.isPublished && amIConvocat && myAttendance !== 'No puc' && (
+                      {event.ispublished && amIConvocat && myAttendance !== 'No puc' && (
                         <span className="px-3 py-1 bg-[#d44211] text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-sm shadow-[#d44211]/20">
                           <CheckCircle size={12} /> Convocat
                         </span>
                       )}
-                      {event.isPublished && !amIConvocat && myAttendance === 'Vull anar-hi' && (
+                      {event.ispublished && !amIConvocat && myAttendance === 'Vull anar-hi' && (
                         <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-full">
                           No convocat
                         </span>
                       )}
-                      {!event.isPublished && myAttendance === 'Vull anar-hi' && (
+                      {!event.ispublished && myAttendance === 'Vull anar-hi' && (
                         <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
                           <CheckCircle size={12} /> Inscrit
                         </span>
@@ -315,7 +326,7 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                 )}
               </div>
 
-              {viewingEvent.isPublished ? (
+              {viewingEvent.ispublished ? (
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                     <Users size={20} className="text-[#d44211]" />
