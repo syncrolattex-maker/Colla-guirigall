@@ -369,7 +369,15 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Tipus</label>
-                    <select value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-[#d44211] focus:border-[#d44211] bg-white">
+                    <select 
+                      value={newEvent.type} 
+                      onChange={e => {
+                        const type = e.target.value;
+                        const location = type === 'Assaig' ? 'Plaça Numero 8, 7A, 46290, Valencia' : newEvent.location;
+                        setNewEvent({...newEvent, type, location});
+                      }} 
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-[#d44211] focus:border-[#d44211] bg-white"
+                    >
                       <option value="Actuació">Actuació</option>
                       <option value="Assaig">Assaig</option>
                     </select>
