@@ -10,14 +10,14 @@ interface AppEvent {
   date: string;
   location: string;
   notes: string;
-  createdBy: string;
-  createdAt: string;
-  isPublished?: boolean;
+  createdby: string;
+  createdat: string;
+  ispublished?: boolean;
 }
 
 interface Attendance {
-  eventId: number;
-  userId: string;
+  eventid: number;
+  userid: string;
   status: 'Vull anar-hi' | 'No puc' | 'Pendent';
   convocat?: boolean;
 }
@@ -54,14 +54,14 @@ export default function Dashboard({ setView, user }: DashboardProps) {
     const { data, error } = await supabase
       .from('attendances')
       .select('*')
-      .eq('userId', user.uid);
+      .eq('userid', user.uid);
       
     if (error) {
       console.error("Error fetching attendances:", error);
     } else {
       const attData: Record<number, Attendance> = {};
       data?.forEach(att => {
-        attData[att.eventId] = att;
+        attData[att.eventid] = att;
       });
       setAttendances(attData);
     }
@@ -92,12 +92,12 @@ export default function Dashboard({ setView, user }: DashboardProps) {
       const { error } = await supabase
         .from('attendances')
         .upsert({
-          eventId,
-          userId: user.uid,
+          eventid: eventId,
+          userid: user.uid,
           status,
           convocat: attendances[eventId]?.convocat || false,
-          updatedAt: new Date().toISOString()
-        }, { onConflict: 'eventId, userId' });
+          updatedat: new Date().toISOString()
+        }, { onConflict: 'eventid, userid' });
         
       if (error) throw error;
     } catch (error) {
@@ -184,7 +184,7 @@ export default function Dashboard({ setView, user }: DashboardProps) {
                     )}
                   </div>
 
-                  {event.isPublished && attendances[event.id]?.convocat && (
+                  {event.ispublished && attendances[event.id]?.convocat && (
                     <div className="mt-2 bg-[#d44211]/10 text-[#d44211] px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
                       <CheckCircle size={16} /> Estàs convocat!
                     </div>
@@ -224,7 +224,7 @@ export default function Dashboard({ setView, user }: DashboardProps) {
                 <div className="flex flex-col flex-1 overflow-hidden">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-[10px] font-bold text-[#d44211] uppercase tracking-wider">{event.type}</span>
-                    {event.isPublished && attendances[event.id]?.convocat && (
+                    {event.ispublished && attendances[event.id]?.convocat && (
                       <span className="w-2 h-2 rounded-full bg-[#d44211]" title="Convocat"></span>
                     )}
                   </div>

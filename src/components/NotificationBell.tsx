@@ -11,10 +11,10 @@ interface AppNotification {
   read: boolean;
   createdat: string;
   link?: string;
-  eventid?: string;
+  eventid?: number;
 }
 
-export default function NotificationBell({ user, onNavigate }: { user: UserData, onNavigate: (view: any, eventId?: string) => void }) {
+export default function NotificationBell({ user, onNavigate }: { user: UserData, onNavigate: (view: any, eventId?: number) => void }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -95,7 +95,8 @@ export default function NotificationBell({ user, onNavigate }: { user: UserData,
     markAsRead(notif.id, notif.read);
     setIsOpen(false);
     if (notif.link) {
-      onNavigate(notif.link, notif.eventid);
+      const eid = typeof notif.eventid === 'string' ? parseInt(notif.eventid) : notif.eventid;
+      onNavigate(notif.link, eid);
     }
   };
 

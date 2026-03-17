@@ -25,7 +25,7 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [updatingProfile, setUpdatingProfile] = useState(false);
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [user, setUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const DEV_MODE = false; // Set to true only for local testing without Supabase Auth
@@ -54,6 +54,11 @@ export default function App() {
 
     checkUser();
 
+    // Safety timeout to prevent infinite loading
+    const safetyTimeout = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 10000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!mounted) return;
       
@@ -72,9 +77,21 @@ export default function App() {
       }
     });
 
+    // Handle visibility change to refresh session
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.user) fetchUserData(session.user);
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       mounted = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -172,7 +189,7 @@ export default function App() {
     }
   };
 
-  const handleNavigate = (view: View, eventId?: string) => {
+  const handleNavigate = (view: View, eventId?: number) => {
     setCurrentView(view);
     if (eventId) {
       setSelectedEventId(eventId);
