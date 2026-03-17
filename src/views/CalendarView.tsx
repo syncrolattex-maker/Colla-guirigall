@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Users, Settings, MapPin, CheckCircle, Plus, X, Trash2, FileText, Music } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, Settings, MapPin, CheckCircle, Plus, X, Trash2, FileText, Music, Pencil } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
@@ -42,6 +42,7 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<AppEvent | null>(null);
   const [viewingEvent, setViewingEvent] = useState<AppEvent | null>(null);
   const [newEvent, setNewEvent] = useState({
     title: '',
@@ -115,36 +116,58 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
     if (setSelectedEventId) setSelectedEventId(null);
   };
 
-  const handleAddEvent = async (e: React.FormEvent) => {
+  const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     const isRehearsal = newEvent.type.startsWith('Assaig');
     if ((!newEvent.title && !isRehearsal) || !newEvent.date) return;
 
     try {
       const finalTitle = newEvent.title || newEvent.type;
-      console.log("Adding event...", { ...newEvent, title: finalTitle });
       
-      const { error } = await supabase.from('events').insert({
+      const eventData = {
         title: finalTitle,
         type: newEvent.type,
         date: newEvent.date,
         location: newEvent.location,
         notes: newEvent.notes,
         createdby: user.name,
-        createdat: new Date().toISOString()
-      });
-      
-      if (error) {
-        console.error("DB Insert Error (events):", error);
-        throw error;
+        // If editing, keep original createdat, otherwise new one
+        createdat: editingEvent ? editingEvent.createdat : new Date().toISOString()
+      };
+
+      if (editingEvent) {
+        console.log("Updating event...", editingEvent.id);
+        const { error } = await supabase.from('events').update(eventData).eq('id', editingEvent.id);
+        if (error) throw error;
+      } else {
+        console.log("Adding event...");
+        const { error } = await supabase.from('events').insert(eventData);
+        if (error) throw error;
       }
       
-      setIsAdding(false);
-      setNewEvent({ title: '', type: 'Actuació', date: '', location: '', notes: '' });
+      handleCloseAddModal();
     } catch (error) {
-      console.error("Error adding event:", error);
-      alert("Hi ha hagut un error en afegir l'esdeveniment.");
+      console.error("Error saving event:", error);
+      alert("Hi ha hagut un error en desar l'esdeveniment.");
     }
+  };
+
+  const handleOpenEdit = (event: AppEvent) => {
+    setEditingEvent(event);
+    setNewEvent({
+      title: event.title,
+      type: event.type,
+      date: event.date.substring(0, 16), // Format for datetime-local
+      location: event.location,
+      notes: event.notes
+    });
+    setIsAdding(true);
+  };
+
+  const handleCloseAddModal = () => {
+    setIsAdding(false);
+    setEditingEvent(null);
+    setNewEvent({ title: '', type: 'Actuació', date: '', location: '', notes: '' });
   };
 
   const handleDeleteEvent = async (eventId: number) => {
@@ -258,15 +281,24 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                           <p className="text-sm text-slate-600 mt-2 italic">{event.notes}</p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
                         {user.role === 'admin' && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleDeleteEvent(event.id); }}
-                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                            title="Eliminar esdeveniment"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                          <>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleOpenEdit(event); }}
+                              className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
+                              title="Editar esdeveniment"
+                            >
+                              <Pencil size={18} />
+                            </button>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleDeleteEvent(event.id); }}
+                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                              title="Eliminar esdeveniment"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </>
                         )}
                         {event.ispublished && amIConvocat && myAttendance !== 'No puc' && (
                           <span className="px-3 py-1 bg-[#d44211] text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-sm shadow-[#d44211]/20">
@@ -447,13 +479,15 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-[#f8f6f6]">
-              <h3 className="text-xl font-bold text-slate-900">Nou Esdeveniment</h3>
-              <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-xl font-bold text-slate-900">
+                {editingEvent ? 'Editar Esdeveniment' : 'Nou Esdeveniment'}
+              </h3>
+              <button onClick={handleCloseAddModal} className="text-slate-400 hover:text-slate-600">
                 <X size={24} />
               </button>
             </div>
             <div className="p-6 overflow-y-auto">
-              <form id="add-event-form" onSubmit={handleAddEvent} className="space-y-4">
+              <form id="add-event-form" onSubmit={handleSaveEvent} className="space-y-4">
                 {!newEvent.type.startsWith('Assaig') && (
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Títol *</label>
@@ -495,7 +529,7 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
               </form>
             </div>
             <div className="p-6 border-t border-slate-100 bg-[#f8f6f6] flex justify-end gap-3">
-              <button onClick={() => setIsAdding(false)} className="px-6 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors">
+              <button onClick={handleCloseAddModal} className="px-6 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors">
                 Cancel·lar
               </button>
               <button type="submit" form="add-event-form" className="px-6 py-3 bg-[#d44211] text-white font-bold rounded-xl hover:bg-[#d44211]/90 transition-colors shadow-lg shadow-[#d44211]/20">
