@@ -5,13 +5,13 @@ import { UserData } from '../App';
 
 interface AppNotification {
   id: number;
-  userId: string;
+  userid: string;
   title: string;
   message: string;
   read: boolean;
-  createdAt: string;
+  createdat: string;
   link?: string;
-  eventId?: string;
+  eventid?: string;
 }
 
 export default function NotificationBell({ user, onNavigate }: { user: UserData, onNavigate: (view: any, eventId?: string) => void }) {
@@ -26,8 +26,8 @@ export default function NotificationBell({ user, onNavigate }: { user: UserData,
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
-      .eq('userId', user.uid)
-      .order('createdAt', { ascending: false });
+      .eq('userid', user.uid)
+      .order('createdat', { ascending: false });
     
     if (error) {
       console.error("Error fetching notifications:", error);
@@ -94,7 +94,7 @@ export default function NotificationBell({ user, onNavigate }: { user: UserData,
     markAsRead(notif.id, notif.read);
     setIsOpen(false);
     if (notif.link) {
-      onNavigate(notif.link, notif.eventId);
+      onNavigate(notif.link, notif.eventid);
     }
   };
 
@@ -153,7 +153,7 @@ export default function NotificationBell({ user, onNavigate }: { user: UserData,
                         </p>
                         <p className="text-xs text-slate-500 mt-1">{notif.message}</p>
                         <p className="text-[10px] text-slate-400 mt-2">
-                          {new Date(notif.createdAt).toLocaleDateString('ca-ES', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(notif.createdat).toLocaleDateString('ca-ES', { hour: '2-digit', minute: '2-digit' })}
                         </p>
                       </div>
                       <button
