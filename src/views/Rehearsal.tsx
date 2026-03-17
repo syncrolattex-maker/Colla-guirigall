@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, CheckCircle, XCircle, FileText, ExternalLink, Info, MapPin, Edit, X, Search, Headphones, PlayCircle, Play, Pause } from 'lucide-react';
+import { Calendar as CalendarIcon, CheckCircle, XCircle, FileText, ExternalLink, Info, MapPin, Edit, X, Search, Headphones, PlayCircle, Play, Pause, Trash2, Plus } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
@@ -147,6 +147,23 @@ export default function Rehearsal({ user }: RehearsalProps) {
     }
   };
 
+  const handleRemoveFromRepertoire = async (songId: number) => {
+    if (!nextRehearsal) return;
+    const updatedIds = (nextRehearsal.repertoireids || []).filter(id => id !== songId);
+    
+    try {
+      const { error } = await supabase.from('events').update({
+        repertoireids: updatedIds
+      }).eq('id', nextRehearsal.id);
+      
+      if (error) throw error;
+      // Real-time will update the list
+    } catch (error) {
+      console.error("Error removing song from repertoire:", error);
+      alert("Error en treure la cançó del repertori.");
+    }
+  };
+
   const toggleSongSelection = (songId: number) => {
     if (selectedSongIds.includes(songId)) {
       setSelectedSongIds(selectedSongIds.filter(id => id !== songId));
@@ -216,9 +233,9 @@ export default function Rehearsal({ user }: RehearsalProps) {
                 {user.role === 'admin' && (
                   <button 
                     onClick={() => setIsEditingRepertoire(true)}
-                    className="text-xs font-bold text-[#d44211] hover:text-[#d44211]/80 flex items-center gap-1 bg-[#d44211]/10 px-3 py-1.5 rounded-lg transition-colors"
+                    className="text-xs font-bold text-[#d44211] hover:text-[#d44211]/80 flex items-center gap-1 bg-[#d44211]/10 px-3 py-1.5 rounded-lg transition-colors border border-[#d44211]/20"
                   >
-                    <Edit size={14} /> Editar Repertori
+                    <Plus size={14} /> <Edit size={14} /> Gestionar Repertori
                   </button>
                 )}
               </div>
@@ -245,7 +262,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
                             </div>
                           </div>
                           
-                          <div className="flex gap-2">
+                           <div className="flex gap-2">
                             {song.mp3_url && (
                               <button 
                                 onClick={() => toggleAudio(song.mp3_url!, song.title)}
@@ -259,6 +276,15 @@ export default function Rehearsal({ user }: RehearsalProps) {
                               <a href={song.youtube_url} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors" title="Veure a YouTube">
                                 <PlayCircle size={16} />
                               </a>
+                            )}
+                            {user.role === 'admin' && (
+                              <button 
+                                onClick={() => handleRemoveFromRepertoire(song.id)}
+                                className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                                title="Treure de l'assaig"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             )}
                           </div>
                         </div>
