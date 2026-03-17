@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Users, Settings, MapPin, CheckCircle, Plus, X } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, Settings, MapPin, CheckCircle, Plus, X, Trash2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
@@ -133,6 +133,19 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
     }
   };
 
+  const handleDeleteEvent = async (eventId: number) => {
+    if (!confirm("Estàs segur que vols eliminar aquest esdeveniment? També s'esborraran les assistències i notificacions associades.")) return;
+    
+    try {
+      const { error } = await supabase.from('events').delete().eq('id', eventId);
+      if (error) throw error;
+      // Real-time will handle the list update
+    } catch (error) {
+      console.error("Error deleting event:", error);
+      alert("Error en eliminar l'esdeveniment.");
+    }
+  };
+
   const handleAttendance = async (eventId: number, status: 'Vull anar-hi' | 'No puc' | 'Pendent', targetUserId: string = user.uid) => {
     try {
       const event = events.find(e => e.id === eventId);
@@ -231,31 +244,42 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                           <p className="text-sm text-slate-600 mt-2 italic">{event.notes}</p>
                         )}
                       </div>
-                      {event.ispublished && amIConvocat && myAttendance !== 'No puc' && (
-                        <span className="px-3 py-1 bg-[#d44211] text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-sm shadow-[#d44211]/20">
-                          <CheckCircle size={12} /> Convocat
-                        </span>
-                      )}
-                      {event.ispublished && !amIConvocat && myAttendance === 'Vull anar-hi' && (
-                        <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-full">
-                          No convocat
-                        </span>
-                      )}
-                      {!event.ispublished && myAttendance === 'Vull anar-hi' && (
-                        <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
-                          <CheckCircle size={12} /> Inscrit
-                        </span>
-                      )}
-                      {myAttendance === 'No puc' && (
-                        <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
-                          No assisteix
-                        </span>
-                      )}
-                      {!myAttendance && (
-                        <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
-                          Pendent
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {user.role === 'admin' && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteEvent(event.id); }}
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            title="Eliminar esdeveniment"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                        {event.ispublished && amIConvocat && myAttendance !== 'No puc' && (
+                          <span className="px-3 py-1 bg-[#d44211] text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-sm shadow-[#d44211]/20">
+                            <CheckCircle size={12} /> Convocat
+                          </span>
+                        )}
+                        {event.ispublished && !amIConvocat && myAttendance === 'Vull anar-hi' && (
+                          <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-full">
+                            No convocat
+                          </span>
+                        )}
+                        {!event.ispublished && myAttendance === 'Vull anar-hi' && (
+                          <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
+                            <CheckCircle size={12} /> Inscrit
+                          </span>
+                        )}
+                        {myAttendance === 'No puc' && (
+                          <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
+                            No assisteix
+                          </span>
+                        )}
+                        {!myAttendance && (
+                          <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
+                            Pendent
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
                       <div className="flex gap-4 text-sm">
