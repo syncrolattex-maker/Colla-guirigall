@@ -102,11 +102,14 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
 
   const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newEvent.title || !newEvent.date) return;
+    const isRehearsal = newEvent.type.startsWith('Assaig');
+    if ((!newEvent.title && !isRehearsal) || !newEvent.date) return;
 
     try {
+      const finalTitle = newEvent.title || newEvent.type;
       const { error } = await supabase.from('events').insert({
         ...newEvent,
+        title: finalTitle,
         createdBy: user.name,
         createdAt: new Date().toISOString()
       });
@@ -362,10 +365,12 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
             </div>
             <div className="p-6 overflow-y-auto">
               <form id="add-event-form" onSubmit={handleAddEvent} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Títol *</label>
-                  <input required type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-[#d44211] focus:border-[#d44211]" placeholder="Ex: Diada Castellera" />
-                </div>
+                {!newEvent.type.startsWith('Assaig') && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1">Títol *</label>
+                    <input type="text" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-[#d44211] focus:border-[#d44211]" placeholder="Ex: Diada Castellera" />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-1">Tipus</label>
