@@ -29,7 +29,7 @@ export default function App() {
   const [user, setUser] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const DEV_MODE = false; // Set to true only for local testing without Supabase Auth
-  const ADMIN_EMAILS = ['syncrolattex@gmail.com']; // We will add more emails here
+  const ADMIN_EMAILS = ['syncrolattex@gmail.com', 'crentero@gmail.com']; // Authorized administrators
 
   useEffect(() => {
     if (DEV_MODE) return;
