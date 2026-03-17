@@ -33,9 +33,9 @@ interface Song {
 }
 
 interface DBUser {
-  id: string;
-  nombre: string;
-  instrumento: string;
+  uid: string;
+  name: string;
+  instrument: string;
 }
 
 interface DBAttendance {
@@ -63,7 +63,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
   };
 
   const fetchUsers = async () => {
-    const { data, error } = await supabase.from('users').select('id, nombre, instrumento');
+    const { data, error } = await supabase.from('users').select('uid, name, instrument');
     if (error) console.error("Error fetching users:", error);
     else setUsers(data || []);
   };
@@ -72,7 +72,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
     const { data, error } = await supabase
       .from('events')
       .select('*')
-      .ilike('type', 'Assaig%')
+      .or(`type.ilike.Assaig%,type.eq.Intercanvi,type.eq.Final de curs,type.eq.Actuació`)
       .gte('date', new Date(new Date().getTime() - 86400000).toISOString())
       .order('date', { ascending: true });
       
@@ -91,7 +91,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
       const { error } = await supabase
         .from('events')
         .delete()
-        .ilike('type', 'Assaig%')
+        .or(`type.ilike.Assaig%,type.eq.Intercanvi,type.eq.Final de curs`)
         .lt('date', oneDayAgo);
       if (error) throw error;
       console.log("Past rehearsals cleaned up");
@@ -276,8 +276,8 @@ export default function Rehearsal({ user }: RehearsalProps) {
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 pb-24 md:pb-8 flex flex-col gap-8">
       <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold text-slate-900">Gestió d'assajos</h1>
-        <p className="text-slate-600">Consulta el repertori i confirma la teva assistència per als propers assajos.</p>
+        <h1 className="text-3xl font-bold text-slate-900">Repertori i Assajos</h1>
+        <p className="text-slate-600">Consulta el repertori i confirma la teva assistència per als propers esdeveniments.</p>
       </div>
 
       {rehearsals.length === 0 ? (
@@ -403,7 +403,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
                           {(() => {
                             const eventAttendees = allAttendances
                               .filter(a => a.eventid === rehearsal.id)
-                              .map(a => users.find(u => u.id === a.userid))
+                              .map(a => users.find(u => u.uid === a.userid))
                               .filter(Boolean) as DBUser[];
 
                             if (eventAttendees.length === 0) {
@@ -411,15 +411,15 @@ export default function Rehearsal({ user }: RehearsalProps) {
                             }
 
                             return eventAttendees.map((attendee) => (
-                              <div key={attendee.id} className="flex items-center justify-between p-2 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-100">
+                              <div key={attendee.uid} className="flex items-center justify-between p-2 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-100">
                                 <div className="flex items-center gap-2">
                                   <div className="w-8 h-8 rounded-full bg-[#d44211]/10 flex items-center justify-center text-[#d44211] font-bold text-xs">
-                                    {attendee.nombre[0]}
+                                    {attendee.name[0]}
                                   </div>
-                                  <p className="text-sm font-semibold text-slate-700">{attendee.nombre}</p>
+                                  <p className="text-sm font-semibold text-slate-700">{attendee.name}</p>
                                 </div>
                                 <span className="text-[10px] uppercase font-bold text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-100">
-                                  {attendee.instrumento}
+                                  {attendee.instrument}
                                 </span>
                               </div>
                             ));

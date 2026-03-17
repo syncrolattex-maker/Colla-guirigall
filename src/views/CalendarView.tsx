@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Users, Settings, MapPin, CheckCircle, Plus, X, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Users, Settings, MapPin, CheckCircle, Plus, X, Trash2, FileText, Music } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
@@ -19,6 +19,12 @@ interface AppEvent {
   createdby: string;
   createdat: string;
   ispublished?: boolean;
+  repertoireids?: number[];
+}
+
+interface Song {
+  id: number;
+  title: string;
 }
 
 interface Attendance {
@@ -33,6 +39,7 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
   const [events, setEvents] = useState<AppEvent[]>([]);
   const [allAttendances, setAllAttendances] = useState<Record<number, Record<string, Attendance>>>({});
   const [users, setUsers] = useState<UserData[]>([]);
+  const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [viewingEvent, setViewingEvent] = useState<AppEvent | null>(null);
@@ -73,10 +80,17 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
     else setUsers(data || []);
   };
 
+  const fetchSongs = async () => {
+    const { data, error } = await supabase.from('songs').select('id, title');
+    if (error) console.error("Error fetching songs:", error);
+    else setSongs(data || []);
+  };
+
   useEffect(() => {
     fetchEvents();
     fetchAttendances();
     fetchUsers();
+    fetchSongs();
 
     const eventsChannel = supabase.channel('public:events').on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, fetchEvents).subscribe();
     const attendancesChannel = supabase.channel('public:attendances').on('postgres_changes', { event: '*', schema: 'public', table: 'attendances' }, fetchAttendances).subscribe();
@@ -364,6 +378,32 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                 )}
               </div>
 
+              {/* Repertoire Section */}
+              {viewingEvent.repertoireids && viewingEvent.repertoireids.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
+                    <Music size={20} className="text-[#d44211]" />
+                    Repertori assignat
+                  </h3>
+                  <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
+                    <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {viewingEvent.repertoireids.map(id => {
+                        const song = songs.find(s => s.id === id);
+                        return (
+                          <li key={id} className="flex items-center gap-2 text-sm text-slate-700 font-medium">
+                            <FileText size={14} className="text-[#d44211]" />
+                            {song?.title || 'Cançó desconeguda'}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                      <p className="text-xs text-slate-500 mb-2">Pots consultar les partitures i audios a la secció de "Obres i Assajos".</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {viewingEvent.ispublished ? (
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
@@ -435,6 +475,8 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                       <option value="Actuació">Actuació</option>
                       <option value="Assaig Colleta">Assaig Colleta</option>
                       <option value="Assaig Cambra">Assaig Cambra</option>
+                      <option value="Intercanvi">Intercanvi</option>
+                      <option value="Final de curs">Final de curs</option>
                     </select>
                   </div>
                   <div>
