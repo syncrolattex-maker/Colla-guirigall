@@ -26,15 +26,10 @@ export default function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [updatingProfile, setUpdatingProfile] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [user, setUser] = useState<UserData | null>({
-    uid: 'da51fb7c-5ee1-495b-93c6-f08b49df7257',
-    email: 'syncrolattex@gmail.com',
-    name: 'Syncrolattex Hernandez',
-    role: 'admin',
-    instrument: 'Dolçaina'
-  });
-  const [loading, setLoading] = useState(false);
-  const DEV_MODE = true;
+  const [user, setUser] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const DEV_MODE = false; // Set to true only for local testing without Supabase Auth
+  const ADMIN_EMAILS = ['syncrolattex@gmail.com']; // We will add more emails here
 
   useEffect(() => {
     if (DEV_MODE) return;
@@ -107,7 +102,7 @@ export default function App() {
           uid: authUser.id,
           email: authUser.email || '',
           name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Nou Membre',
-          role: authUser.email === 'syncrolattex@gmail.com' ? 'admin' : 'member',
+          role: ADMIN_EMAILS.includes(authUser.email || '') ? 'admin' : 'member',
           instrument: 'Sense assignar'
         };
         
@@ -124,8 +119,8 @@ export default function App() {
         userData = insertedUser;
       }
 
-      // Force admin role for the owner email
-      if (authUser.email === 'syncrolattex@gmail.com' && userData) {
+      // Force admin role for users in the list
+      if (ADMIN_EMAILS.includes(authUser.email || '') && userData) {
         userData.role = 'admin';
       }
       
@@ -211,7 +206,7 @@ export default function App() {
             <button onClick={() => setCurrentView('dashboard')} className={`text-sm font-semibold ${currentView === 'dashboard' ? 'text-[#d44211] border-b-2 border-[#d44211]' : 'text-slate-600 hover:text-[#d44211]'}`}>Inici</button>
             <button onClick={() => setCurrentView('repertoire')} className={`text-sm font-semibold ${currentView === 'repertoire' ? 'text-[#d44211] border-b-2 border-[#d44211]' : 'text-slate-600 hover:text-[#d44211]'}`}>Repertori</button>
             <button onClick={() => setCurrentView('calendar')} className={`text-sm font-semibold ${currentView === 'calendar' ? 'text-[#d44211] border-b-2 border-[#d44211]' : 'text-slate-600 hover:text-[#d44211]'}`}>Calendari</button>
-            <button onClick={() => setCurrentView('rehearsal')} className={`text-sm font-semibold ${currentView === 'rehearsal' ? 'text-[#d44211] border-b-2 border-[#d44211]' : 'text-slate-600 hover:text-[#d44211]'}`}>Assajos</button>
+            <button onClick={() => setCurrentView('rehearsal')} className={`text-sm font-semibold ${currentView === 'rehearsal' ? 'text-[#d44211] border-b-2 border-[#d44211]' : 'text-slate-600 hover:text-[#d44211]'}`}>Obres i Assajos</button>
             {user.role === 'admin' && (
               <button onClick={() => setCurrentView('admin')} className={`text-sm font-semibold ${currentView === 'admin' ? 'text-[#d44211] border-b-2 border-[#d44211]' : 'text-slate-600 hover:text-[#d44211]'}`}>Admin</button>
             )}
@@ -242,7 +237,7 @@ export default function App() {
           <button onClick={() => { setCurrentView('dashboard'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Inici</button>
           <button onClick={() => { setCurrentView('repertoire'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Repertori</button>
           <button onClick={() => { setCurrentView('calendar'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Calendari</button>
-          <button onClick={() => { setCurrentView('rehearsal'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Assajos</button>
+          <button onClick={() => { setCurrentView('rehearsal'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Obres i Assajos</button>
           {user.role === 'admin' && (
             <button onClick={() => { setCurrentView('admin'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold">Admin</button>
           )}
@@ -287,6 +282,20 @@ export default function App() {
                   <option value="Tabal">Tabal</option>
                 </select>
               </div>
+              {DEV_MODE && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Rol (Només DEV)</label>
+                  <select 
+                    value={user.role}
+                    onChange={(e) => setUser({...user, role: e.target.value as 'admin' | 'member'})}
+                    className="w-full p-3 border border-amber-200 rounded-xl focus:ring-amber-500 focus:border-amber-500 bg-amber-50 font-medium text-amber-900"
+                  >
+                    <option value="admin">Administrador</option>
+                    <option value="member">Usuari (Membre)</option>
+                  </select>
+                  <p className="text-[10px] text-amber-600 mt-1 italic">Aquest selector només apareix en mode desenvolupament.</p>
+                </div>
+              )}
             </div>
             <div className="p-6 border-t border-slate-100 bg-[#f8f6f6] flex justify-end">
               <button onClick={() => setIsProfileOpen(false)} className="px-6 py-3 bg-[#d44211] text-white font-bold rounded-xl hover:bg-[#d44211]/90 transition-colors shadow-lg shadow-[#d44211]/20">
