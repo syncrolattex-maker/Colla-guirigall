@@ -26,10 +26,18 @@ export default function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [updatingProfile, setUpdatingProfile] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [user, setUser] = useState<UserData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<UserData | null>({
+    uid: 'da51fb7c-5ee1-495b-93c6-f08b49df7257',
+    email: 'syncrolattex@gmail.com',
+    name: 'Syncrolattex Hernandez',
+    role: 'admin',
+    instrument: 'Dolçaina'
+  });
+  const [loading, setLoading] = useState(false);
+  const DEV_MODE = true;
 
   useEffect(() => {
+    if (DEV_MODE) return;
     let mounted = true;
 
     const checkUser = async () => {
@@ -143,6 +151,10 @@ export default function App() {
   }
 
   const handleLogout = async () => {
+    if (DEV_MODE) {
+      alert("Estàs en mode desenvolupament. El login està desactivat.");
+      return;
+    }
     await supabase.auth.signOut();
   };
 
