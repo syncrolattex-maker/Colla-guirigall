@@ -30,7 +30,9 @@ export default function Repertoire({ user }: RepertoireProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-
+  const [editingSong, setEditingSong] = useState<Song | null>(null);
+  const [existingPdfs, setExistingPdfs] = useState<SongPdf[]>([]);
+  
   const [newSong, setNewSong] = useState({
     title: '',
     composer: '',
@@ -72,18 +74,21 @@ export default function Repertoire({ user }: RepertoireProps) {
     };
   }, []);
 
-  const handleAddSong = async (e: React.FormEvent) => {
+  const handleSubmitSong = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSong.title) return;
 
     setUploading(true);
     try {
-      console.log("Adding song...", newSong);
-      let pdfs: SongPdf[] = [];
-      let mp3_url = '';
+      console.log(editingSong ? "Updating song..." : "Adding song...", newSong);
+      
+      // Keep existing PDFs that weren't deleted
+      let pdfs: SongPdf[] = [...existingPdfs];
+      let mp3_url = editingSong?.mp3_url || '';
 
+      // Upload new PDFs
       for (const pdf of pdfFiles) {
-        if (pdf.file.size === 0) continue;
+        if (!pdf.file || pdf.file.size === 0) continue;
         
         const fileName = `${Date.now()}_${pdf.file.name}`;
         console.log("Uploading PDF:", fileName);
@@ -100,6 +105,7 @@ export default function Repertoire({ user }: RepertoireProps) {
         pdfs.push({ instrument: pdf.instrument, url: urlData.publicUrl });
       }
 
+      // Upload new MP3 if provided
       if (mp3File) {
         const fileName = `${Date.now()}_${mp3File.name}`;
         console.log("Uploading MP3:", fileName);
@@ -115,37 +121,77 @@ export default function Repertoire({ user }: RepertoireProps) {
         mp3_url = urlData.publicUrl;
       }
 
-      console.log("Inserting song into DB...");
-      const { error: insertError } = await supabase
-        .from('songs')
-        .insert([{
-          title: newSong.title,
-          composer: newSong.composer,
-          style: newSong.style,
-          youtube_url: newSong.youtubeUrl,
-          pdfs,
-          mp3_url,
-          added_by: user.name
-          // created_at handler by DB default
-        }]);
-      
-      if (insertError) {
-        console.error("DB Insert Error:", insertError);
-        throw insertError;
+      const songData = {
+        title: newSong.title,
+        composer: newSong.composer,
+        style: newSong.style,
+        youtube_url: newSong.youtubeUrl,
+        pdfs,
+        mp3_url,
+        added_by: user.name
+      };
+
+      if (editingSong) {
+        console.log("Saving changes to DB...");
+        const { error: updateError } = await supabase
+          .from('songs')
+          .update(songData)
+          .eq('id', editingSong.id);
+          
+        if (updateError) throw updateError;
+        console.log("Song updated successfully!");
+      } else {
+        console.log("Inserting song into DB...");
+        const { error: insertError } = await supabase
+          .from('songs')
+          .insert([songData]);
+          
+        if (insertError) throw insertError;
+        console.log("Song added successfully!");
       }
       
-      console.log("Song added successfully!");
-      setIsAdding(false);
-      setNewSong({ title: '', composer: '', style: '', youtubeUrl: '' });
-      setPdfFiles([]);
-      setMp3File(null);
+      handleCloseModal();
       await fetchSongs();
     } catch (error: any) {
-      console.error("Error adding song:", error);
-      alert(`Error en afegir la cançó: ${error.message || error.error_description || 'Error desconegut'}`);
+      console.error("Error saving song:", error);
+      alert(`Error en desar la cançó: ${error.message || error.error_description || 'Error desconegut'}`);
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleDeleteSong = async (id: number) => {
+    if (!confirm("Estàs segur que vols eliminar aquesta cançó?")) return;
+    
+    try {
+      const { error } = await supabase.from('songs').delete().eq('id', id);
+      if (error) throw error;
+      await fetchSongs();
+    } catch (error: any) {
+      console.error("Error deleting song:", error);
+      alert("Error en eliminar la cançó.");
+    }
+  };
+
+  const handleOpenEdit = (song: Song) => {
+    setEditingSong(song);
+    setNewSong({
+      title: song.title,
+      composer: song.composer || '',
+      style: song.style || '',
+      youtubeUrl: song.youtube_url || ''
+    });
+    setExistingPdfs(song.pdfs || []);
+    setIsAdding(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsAdding(false);
+    setEditingSong(null);
+    setNewSong({ title: '', composer: '', style: '', youtubeUrl: '' });
+    setPdfFiles([]);
+    setExistingPdfs([]);
+    setMp3File(null);
   };
 
   const filteredSongs = songs.filter(song => 
@@ -241,6 +287,22 @@ export default function Repertoire({ user }: RepertoireProps) {
                               </a>
                             ) : null}
                           </div>
+                          {user.role === 'admin' && (
+                            <div className="flex justify-end gap-2 mt-2">
+                              <button 
+                                onClick={() => handleOpenEdit(song)}
+                                className="text-xs font-bold text-blue-600 hover:underline px-2 py-1"
+                              >
+                                Editar
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteSong(song.id)}
+                                className="text-xs font-bold text-red-600 hover:underline px-2 py-1"
+                              >
+                                Eliminar
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -257,13 +319,15 @@ export default function Repertoire({ user }: RepertoireProps) {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-[#f8f6f6]">
-              <h3 className="text-xl font-bold text-slate-900">Afegir nova cançó</h3>
-              <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="text-xl font-bold text-slate-900">
+                {editingSong ? 'Editar cançó' : 'Afegir nova cançó'}
+              </h3>
+              <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600">
                 <X size={24} />
               </button>
             </div>
             <div className="p-6 overflow-y-auto">
-              <form id="add-song-form" onSubmit={handleAddSong} className="space-y-4">
+              <form id="add-song-form" onSubmit={handleSubmitSong} className="space-y-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">Títol *</label>
                   <input required type="text" value={newSong.title} onChange={e => setNewSong({...newSong, title: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl focus:ring-[#d44211] focus:border-[#d44211]" placeholder="Ex: La Santa Espina" />
@@ -282,8 +346,26 @@ export default function Repertoire({ user }: RepertoireProps) {
                   <p className="text-sm text-slate-500 mb-4">Puja els arxius o afegeix enllaços</p>
                   <div className="space-y-4">
                     <div>
+                      {existingPdfs.length > 0 && (
+                        <div className="mb-4 space-y-2">
+                          <p className="text-xs font-bold text-slate-500 uppercase">Partitures existents</p>
+                          {existingPdfs.map((pdf, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-2 bg-red-50 rounded-lg border border-red-100">
+                              <span className="text-sm font-bold text-red-700">{pdf.instrument}</span>
+                              <button 
+                                type="button" 
+                                onClick={() => setExistingPdfs(existingPdfs.filter((_, i) => i !== idx))}
+                                className="text-red-500 hover:text-red-700"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm font-bold text-slate-700">Partitures (PDF) per Instrument</label>
+                        <label className="block text-sm font-bold text-slate-700">Afegir Partitures (PDF)</label>
                         <button 
                           type="button"
                           onClick={() => setPdfFiles([...pdfFiles, { instrument: 'General', file: new File([], '') }])}
@@ -372,14 +454,14 @@ export default function Repertoire({ user }: RepertoireProps) {
               </form>
             </div>
             <div className="p-6 border-t border-slate-100 bg-[#f8f6f6] flex justify-end gap-3">
-              <button onClick={() => setIsAdding(false)} disabled={uploading} className="px-6 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50">
+              <button onClick={handleCloseModal} disabled={uploading} className="px-6 py-3 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50">
                 Cancel·lar
               </button>
               <button type="submit" form="add-song-form" disabled={uploading} className="px-6 py-3 bg-[#d44211] text-white font-bold rounded-xl hover:bg-[#d44211]/90 transition-colors shadow-lg shadow-[#d44211]/20 disabled:opacity-50 flex items-center gap-2">
                 {uploading ? (
-                  <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Pujant...</>
+                  <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Desar...</>
                 ) : (
-                  'Guardar Cançó'
+                  editingSong ? 'Guardar Canvis' : 'Guardar Cançó'
                 )}
               </button>
             </div>
