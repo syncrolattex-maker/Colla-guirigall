@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, Headphones, PlayCircle, Plus, X, Upload } from 'lucide-react';
+import { Search, FileText, Headphones, PlayCircle, Plus, X, Upload, Play, Pause, Volume2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
@@ -42,6 +42,7 @@ export default function Repertoire({ user }: RepertoireProps) {
   
   const [pdfFiles, setPdfFiles] = useState<{ instrument: string, file: File }[]>([]);
   const [mp3File, setMp3File] = useState<File | null>(null);
+  const [activeAudio, setActiveAudio] = useState<{url: string, title: string} | null>(null);
 
   const fetchSongs = async () => {
     setLoading(true);
@@ -194,6 +195,14 @@ export default function Repertoire({ user }: RepertoireProps) {
     setMp3File(null);
   };
 
+  const toggleAudio = (url: string, title: string) => {
+    if (activeAudio?.url === url) {
+      setActiveAudio(null);
+    } else {
+      setActiveAudio({ url, title });
+    }
+  };
+
   const filteredSongs = songs.filter(song => 
     song.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (song.composer && song.composer.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -277,9 +286,13 @@ export default function Repertoire({ user }: RepertoireProps) {
                           </div>
                           <div className="flex justify-end gap-2">
                             {song.mp3_url ? (
-                              <a href={song.mp3_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
-                                <Headphones size={14} /> MP3
-                              </a>
+                              <button 
+                                onClick={() => toggleAudio(song.mp3_url, song.title)}
+                                className={`flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeAudio?.url === song.mp3_url ? 'bg-[#d44211] text-white' : 'bg-blue-100 text-blue-700 hover:scale-105'}`}
+                              >
+                                {activeAudio?.url === song.mp3_url ? <Pause size={14} /> : <Play size={14} />}
+                                {activeAudio?.url === song.mp3_url ? 'Aturar' : 'Reproduïr'}
+                              </button>
                             ) : null}
                             {song.youtube_url ? (
                               <a href={song.youtube_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
@@ -465,6 +478,36 @@ export default function Repertoire({ user }: RepertoireProps) {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Audio Player Sticky */}
+      {activeAudio && (
+        <div className="fixed bottom-20 left-4 right-4 md:bottom-24 md:left-auto md:right-8 md:w-96 bg-white border-2 border-[#d44211] shadow-2xl rounded-2xl z-40 animate-in slide-in-from-bottom-4 duration-300">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="w-10 h-10 bg-[#d44211]/10 rounded-lg flex items-center justify-center text-[#d44211] flex-shrink-0 animate-pulse">
+                  <Headphones size={20} />
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-xs font-bold text-[#d44211] uppercase tracking-wider">S'està reproduint</p>
+                  <p className="text-sm font-black text-slate-900 truncate">{activeAudio.title}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setActiveAudio(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <audio 
+              src={activeAudio.url} 
+              controls 
+              autoPlay 
+              className="w-full h-10 custom-audio-player"
+            />
           </div>
         </div>
       )}
