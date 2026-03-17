@@ -135,15 +135,22 @@ export default function Rehearsal({ user }: RehearsalProps) {
 
   const handleSaveRepertoire = async () => {
     if (!nextRehearsal) return;
+    
+    // Optimistic update
+    setNextRehearsal({ ...nextRehearsal, repertoireids: selectedSongIds });
+    setIsEditingRepertoire(false);
+
     try {
       const { error } = await supabase.from('events').update({
         repertoireids: selectedSongIds
       }).eq('id', nextRehearsal.id);
+      
       if (error) throw error;
-      setIsEditingRepertoire(false);
     } catch (error) {
       console.error("Error updating repertoire:", error);
       alert("Error en actualitzar el repertori.");
+      // Rollback
+      fetchNextRehearsal();
     }
   };
 
@@ -151,16 +158,21 @@ export default function Rehearsal({ user }: RehearsalProps) {
     if (!nextRehearsal) return;
     const updatedIds = (nextRehearsal.repertoireids || []).filter(id => id !== songId);
     
+    // Optimistic update
+    setNextRehearsal({ ...nextRehearsal, repertoireids: updatedIds });
+    setSelectedSongIds(updatedIds);
+
     try {
       const { error } = await supabase.from('events').update({
         repertoireids: updatedIds
       }).eq('id', nextRehearsal.id);
       
       if (error) throw error;
-      // Real-time will update the list
     } catch (error) {
       console.error("Error removing song from repertoire:", error);
       alert("Error en treure la cançó del repertori.");
+      // Rollback on error
+      fetchNextRehearsal();
     }
   };
 
