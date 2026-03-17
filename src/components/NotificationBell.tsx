@@ -52,11 +52,12 @@ export default function NotificationBell({ user, onNavigate }: { user: UserData,
   }, [user]);
 
   useEffect(() => {
-    // Check for new unread notifications to show toast
+    // Check for new unread notifications that were not in our previous state
     const newNotifs = notifications.filter(n => 
-      !n.read && !prevNotifsRef.current.find(p => p.id === n.id)
+      !n.read && !prevNotifsRef.current.some(p => p.id === n.id)
     );
     
+    // If we have actual new notifications and this is not the first load (to avoid toast on initial login)
     if (newNotifs.length > 0 && prevNotifsRef.current.length > 0) {
       setShowToast(newNotifs[0]);
       setTimeout(() => setShowToast(null), 5000);
