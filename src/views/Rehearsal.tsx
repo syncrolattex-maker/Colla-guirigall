@@ -27,7 +27,7 @@ interface Song {
   title: string;
   composer: string;
   style: string;
-  pdfUrl?: string;
+  pdfUrl?: string; // Legacy field if any
   pdfs?: SongPdf[];
 }
 

@@ -18,10 +18,10 @@ interface Song {
   composer: string;
   style: string;
   pdfs?: SongPdf[];
-  mp3Url: string;
-  youtubeUrl: string;
-  addedBy: string;
-  createdAt: string;
+  mp3_url: string;
+  youtube_url: string;
+  added_by: string;
+  created_at: string;
 }
 
 export default function Repertoire({ user }: RepertoireProps) {
@@ -46,7 +46,7 @@ export default function Repertoire({ user }: RepertoireProps) {
     const { data, error } = await supabase
       .from('songs')
       .select('*')
-      .order('createdAt', { ascending: false });
+      .order('created_at', { ascending: false });
     
     if (error) {
       console.error("Error fetching songs:", error);
@@ -78,13 +78,15 @@ export default function Repertoire({ user }: RepertoireProps) {
 
     setUploading(true);
     try {
+      console.log("Adding song...", newSong);
       let pdfs: SongPdf[] = [];
-      let mp3Url = '';
+      let mp3_url = '';
 
       for (const pdf of pdfFiles) {
         if (pdf.file.size === 0) continue;
         
         const fileName = `${Date.now()}_${pdf.file.name}`;
+        console.log("Uploading PDF:", fileName);
         const { error: uploadError } = await supabase.storage
           .from('repertoire')
           .upload(fileName, pdf.file);
@@ -100,6 +102,7 @@ export default function Repertoire({ user }: RepertoireProps) {
 
       if (mp3File) {
         const fileName = `${Date.now()}_${mp3File.name}`;
+        console.log("Uploading MP3:", fileName);
         const { error: uploadError } = await supabase.storage
           .from('repertoire')
           .upload(fileName, mp3File);
@@ -109,28 +112,37 @@ export default function Repertoire({ user }: RepertoireProps) {
         const { data: urlData } = supabase.storage
           .from('repertoire')
           .getPublicUrl(fileName);
-        mp3Url = urlData.publicUrl;
+        mp3_url = urlData.publicUrl;
       }
 
+      console.log("Inserting song into DB...");
       const { error: insertError } = await supabase
         .from('songs')
         .insert([{
-          ...newSong,
+          title: newSong.title,
+          composer: newSong.composer,
+          style: newSong.style,
+          youtube_url: newSong.youtubeUrl,
           pdfs,
-          mp3Url,
-          addedBy: user.name,
-          createdAt: new Date().toISOString()
+          mp3_url,
+          added_by: user.name
+          // created_at handler by DB default
         }]);
       
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error("DB Insert Error:", insertError);
+        throw insertError;
+      }
       
+      console.log("Song added successfully!");
       setIsAdding(false);
       setNewSong({ title: '', composer: '', style: '', youtubeUrl: '' });
       setPdfFiles([]);
       setMp3File(null);
-    } catch (error) {
+      await fetchSongs();
+    } catch (error: any) {
       console.error("Error adding song:", error);
-      alert("Hi ha hagut un error en afegir la cançó.");
+      alert(`Error en afegir la cançó: ${error.message || error.error_description || 'Error desconegut'}`);
     } finally {
       setUploading(false);
     }
@@ -199,7 +211,7 @@ export default function Repertoire({ user }: RepertoireProps) {
                     <tr key={song.id} className="hover:bg-[#d44211]/5 transition-colors">
                       <td className="px-6 py-6">
                         <div className="font-bold text-slate-900 text-base">{song.title}</div>
-                        <div className="text-xs text-slate-500 mt-1 uppercase tracking-tighter">Afegit per: {song.addedBy}</div>
+                        <div className="text-xs text-slate-500 mt-1 uppercase tracking-tighter">Afegit per: {song.added_by}</div>
                       </td>
                       <td className="px-6 py-6 text-slate-600 font-medium">
                         {song.composer} {song.style && <span className="text-slate-400">/ {song.style}</span>}
@@ -218,13 +230,13 @@ export default function Repertoire({ user }: RepertoireProps) {
                             )}
                           </div>
                           <div className="flex justify-end gap-2">
-                            {song.mp3Url ? (
-                              <a href={song.mp3Url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
+                            {song.mp3_url ? (
+                              <a href={song.mp3_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
                                 <Headphones size={14} /> MP3
                               </a>
                             ) : null}
-                            {song.youtubeUrl ? (
-                              <a href={song.youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
+                            {song.youtube_url ? (
+                              <a href={song.youtube_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:scale-105 transition-transform">
                                 <PlayCircle size={14} /> YouTube
                               </a>
                             ) : null}

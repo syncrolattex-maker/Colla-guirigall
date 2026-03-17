@@ -30,44 +30,75 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await fetchUserData(session.user);
-      } else {
-        setUser(null);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (mounted) {
+          if (session?.user) {
+            await fetchUserData(session.user);
+          } else {
+            setUser(null);
+          }
+        }
+      } catch (err) {
+        console.error("Error in checkUser:", err);
+      } finally {
+        if (mounted) setLoading(false);
       }
-      setLoading(false);
     };
 
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        await fetchUserData(session.user);
-      } else {
-        setUser(null);
+      if (!mounted) return;
+      
+      console.log("Auth state change:", _event, session?.user?.email);
+      
+      try {
+        if (session?.user) {
+          await fetchUserData(session.user);
+        } else {
+          setUser(null);
+        }
+      } catch (err) {
+        console.error("Error in onAuthStateChange handler:", err);
+      } finally {
+        if (mounted) setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchUserData = async (authUser: any) => {
     try {
-      let { data: userData, error } = await supabase
+      console.log("Fetching data for UID:", authUser.id);
+      
+      // Use select() instead of single() to avoid 406 error confusion
+      let { data: users, error } = await supabase
         .from('users')
         .select('*')
-        .eq('uid', authUser.id)
-        .single();
+        .eq('uid', authUser.id);
 
-      if (error && error.code === 'PGRST116') {
+      if (error) {
+        console.error("Supabase select error:", error);
+        throw error;
+      }
+
+      let userData = users && users.length > 0 ? users[0] : null;
+
+      if (!userData) {
+        console.log("User not found in DB, creating profile...");
         // User not found, create it
         const newUser = {
           uid: authUser.id,
           email: authUser.email || '',
-          name: authUser.user_metadata.full_name || 'Nou Membre',
+          name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Nou Membre',
           role: authUser.email === 'syncrolattex@gmail.com' ? 'admin' : 'member',
           instrument: 'Sense assignar'
         };
@@ -78,19 +109,24 @@ export default function App() {
           .select()
           .single();
           
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error("Supabase insert error:", insertError);
+          throw insertError;
+        }
         userData = insertedUser;
-      } else if (error) {
-        throw error;
       }
 
       // Force admin role for the owner email
-      if (authUser.email === 'syncrolattex@gmail.com') {
+      if (authUser.email === 'syncrolattex@gmail.com' && userData) {
         userData.role = 'admin';
       }
+      
+      console.log("User dynamic data loaded:", userData);
       setUser(userData);
-    } catch (error) {
-      console.error("Error fetching user data:", error);
+    } catch (error: any) {
+      console.error("Detailed error fetching user data:", error);
+      // Even if it fails, we shouldn't block the app forever
+      // but without user data many things will fail.
     }
   };
 
