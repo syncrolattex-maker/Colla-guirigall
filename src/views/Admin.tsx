@@ -12,7 +12,7 @@ interface AppEvent {
   title: string;
   date: string;
   type: string;
-  isPublished?: boolean;
+  ispublished?: boolean;
 }
 
 interface Member {
@@ -70,12 +70,12 @@ export default function Admin({ user }: AdminProps) {
     const { data, error } = await supabase
       .from('attendances')
       .select('*')
-      .eq('eventId', selectedEventId);
+      .eq('eventid', selectedEventId);
     if (error) console.error("Error fetching attendances:", error);
     else {
       const attendanceData: Record<string, {status: string, convocat: boolean}> = {};
       data?.forEach(d => {
-        attendanceData[d.userId] = {
+        attendanceData[d.userid] = {
           status: d.status,
           convocat: d.convocat || false
         };
@@ -108,12 +108,12 @@ export default function Admin({ user }: AdminProps) {
     if (!selectedEventId) return;
     try {
       const { error } = await supabase.from('attendances').upsert({
-        eventId: selectedEventId,
-        userId: userId,
+        eventid: selectedEventId,
+        userid: userId,
         status: newStatus,
         convocat: attendances[userId]?.convocat || false,
-        updatedAt: new Date().toISOString()
-      }, { onConflict: 'eventId, userId' });
+        updatedat: new Date().toISOString()
+      }, { onConflict: 'eventid, userid' });
       if (error) throw error;
     } catch (error) {
       console.error("Error updating attendance:", error);
@@ -125,12 +125,12 @@ export default function Admin({ user }: AdminProps) {
     if (!selectedEventId) return;
     try {
       const { error } = await supabase.from('attendances').upsert({
-        eventId: selectedEventId,
-        userId: userId,
+        eventid: selectedEventId,
+        userid: userId,
         status: attendances[userId]?.status || 'Pendent',
         convocat: convocat,
-        updatedAt: new Date().toISOString()
-      }, { onConflict: 'eventId, userId' });
+        updatedat: new Date().toISOString()
+      }, { onConflict: 'eventid, userid' });
       if (error) throw error;
     } catch (error) {
       console.error("Error updating convocat:", error);
@@ -143,23 +143,24 @@ export default function Admin({ user }: AdminProps) {
     try {
       const { error: eventError } = await supabase
         .from('events')
-        .update({ isPublished: true })
+        .update({ ispublished: true })
         .eq('id', selectedEventId);
       if (eventError) throw eventError;
 
       const event = events.find(e => e.id === selectedEventId);
       const eventTitle = event?.title || 'Actuació';
+      const eventDate = event ? new Date(event.date).toLocaleString('ca-ES', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '';
 
       const notifications = combinedData
         .filter(m => m.convocat)
         .map(m => ({
-          userId: m.uid,
+          userid: m.uid,
           title: 'Convocatòria Confirmada',
-          message: `Has estat convocat per a l'actuació: ${eventTitle}. Revisa el calendari.`,
+          message: `Has estat convocat per a l'actuació "${eventTitle}" el dia ${eventDate}. Revisa el calendari per a més detalls.`,
           read: false,
-          createdAt: new Date().toISOString(),
+          createdat: new Date().toISOString(),
           link: 'calendar',
-          eventId: selectedEventId
+          eventid: selectedEventId
         }));
 
       if (notifications.length > 0) {
@@ -187,6 +188,9 @@ export default function Admin({ user }: AdminProps) {
     status: attendances[m.uid]?.status || 'Pendent',
     convocat: attendances[m.uid]?.convocat || false
   }));
+
+  const manageableMusicians = combinedData.filter(m => m.status === 'Vull anar-hi');
+  const otherMusicians = combinedData.filter(m => m.status !== 'Vull anar-hi');
 
   const totalVoluntaris = combinedData.filter(m => m.convocat).length;
   const dolcaines = combinedData.filter(m => m.convocat && m.instrument.toLowerCase().includes('dolçaina')).length;
@@ -223,7 +227,7 @@ export default function Admin({ user }: AdminProps) {
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-3">
               <h2 className="text-3xl font-black text-slate-900 tracking-tight">Gestió de Convocatòria</h2>
-              {selectedEvent?.isPublished && (
+              {selectedEvent?.ispublished && (
                 <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
                   <CheckCircle size={12} /> Publicat
                 </span>
@@ -277,10 +281,13 @@ export default function Admin({ user }: AdminProps) {
 
         <div className="bg-white rounded-xl border border-[#d44211]/10 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-[#d44211]/10 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <h3 className="font-bold text-slate-900">Llistat d'Assistència</h3>
-            <button onClick={handlePublish} className="px-4 py-2 bg-[#d44211] text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#d44211]/90 transition-colors">
-              <CheckCircle size={16} /> Confirmar Convocatòria
-            </button>
+            <h3 className="font-bold text-slate-900">Músics disponibles (Vull anar-hi)</h3>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 font-medium">{otherMusicians.length} persones han dit que no poden o no han respost</span>
+              <button onClick={handlePublish} className="px-4 py-2 bg-[#d44211] text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-[#d44211]/90 transition-colors">
+                <CheckCircle size={16} /> Confirmar Convocatòria
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[600px]">
@@ -300,14 +307,14 @@ export default function Admin({ user }: AdminProps) {
                       <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#d44211]"></div>
                     </td>
                   </tr>
-                ) : combinedData.length === 0 ? (
+                ) : manageableMusicians.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
-                      No hi ha membres registrats.
+                      Encara no hi ha músics que hagin confirmat disponibilitat ("Vull anar-hi").
                     </td>
                   </tr>
                 ) : (
-                  combinedData.map((m) => (
+                  manageableMusicians.map((m) => (
                     <tr key={m.uid} className={`hover:bg-[#d44211]/5 transition-colors ${m.status === 'No puc' ? 'opacity-60' : ''}`}>
                       <td className="px-6 py-4 text-center">
                         <input 
@@ -358,7 +365,7 @@ export default function Admin({ user }: AdminProps) {
             </table>
           </div>
           <div className="px-6 py-4 bg-[#d44211]/5 flex justify-between items-center text-xs font-bold text-slate-500">
-            <p>Mostrant {combinedData.length} membres de la colla</p>
+            <p>Mostrant {manageableMusicians.length} músics disponibles</p>
           </div>
         </div>
 
