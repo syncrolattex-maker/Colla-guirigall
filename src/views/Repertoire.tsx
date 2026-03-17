@@ -76,6 +76,14 @@ export default function Repertoire({ user }: RepertoireProps) {
     };
   }, []);
 
+  const sanitizeFilename = (filename: string) => {
+    return filename
+      .normalize('NFD') // Normalize to decomposable form
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace any non-alphanumeric (except dot and dash) with underscore
+      .replace(/_{2,}/g, '_'); // Replace multiple underscores with a single one
+  };
+
   const handleSubmitSong = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSong.title) return;
@@ -92,7 +100,7 @@ export default function Repertoire({ user }: RepertoireProps) {
       for (const pdf of pdfFiles) {
         if (!pdf.file || pdf.file.size === 0) continue;
         
-        const fileName = `${Date.now()}_${pdf.file.name}`;
+        const fileName = `${Date.now()}_${sanitizeFilename(pdf.file.name)}`;
         console.log("Uploading PDF:", fileName);
         const { error: uploadError } = await supabase.storage
           .from('repertoire')
@@ -109,7 +117,7 @@ export default function Repertoire({ user }: RepertoireProps) {
 
       // Upload new MP3 if provided
       if (mp3File) {
-        const fileName = `${Date.now()}_${mp3File.name}`;
+        const fileName = `${Date.now()}_${sanitizeFilename(mp3File.name)}`;
         console.log("Uploading MP3:", fileName);
         const { error: uploadError } = await supabase.storage
           .from('repertoire')
