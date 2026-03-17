@@ -69,9 +69,26 @@ export default function Rehearsal({ user }: RehearsalProps) {
     setLoading(false);
   };
 
+  const cleanupPastRehearsals = async () => {
+    if (user.role !== 'admin') return;
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    try {
+      const { error } = await supabase
+        .from('events')
+        .delete()
+        .ilike('type', 'Assaig%')
+        .lt('date', oneDayAgo);
+      if (error) throw error;
+      console.log("Past rehearsals cleaned up");
+    } catch (error) {
+      console.error("Error cleaning up past rehearsals:", error);
+    }
+  };
+
   useEffect(() => {
     fetchSongs();
     fetchNextRehearsal();
+    cleanupPastRehearsals();
 
     const songsChannel = supabase.channel('public:songs').on('postgres_changes', { event: '*', schema: 'public', table: 'songs' }, fetchSongs).subscribe();
     const eventsChannel = supabase.channel('public:events').on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, fetchNextRehearsal).subscribe();
