@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, CheckCircle, XCircle, FileText, ExternalLink, Info, MapPin, Edit, X, Search } from 'lucide-react';
+import { Calendar as CalendarIcon, CheckCircle, XCircle, FileText, ExternalLink, Info, MapPin, Edit, X, Search, Headphones, PlayCircle, Play, Pause } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
@@ -27,8 +27,9 @@ interface Song {
   title: string;
   composer: string;
   style: string;
-  pdfUrl?: string; // Legacy field if any
   pdfs?: SongPdf[];
+  mp3_url?: string;
+  youtube_url?: string;
 }
 
 export default function Rehearsal({ user }: RehearsalProps) {
@@ -39,6 +40,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
   const [isEditingRepertoire, setIsEditingRepertoire] = useState(false);
   const [selectedSongIds, setSelectedSongIds] = useState<number[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeAudio, setActiveAudio] = useState<{url: string, title: string} | null>(null);
 
   const fetchSongs = async () => {
     const { data, error } = await supabase.from('songs').select('*');
@@ -112,6 +114,14 @@ export default function Rehearsal({ user }: RehearsalProps) {
     } catch (error) {
       console.error("Error updating attendance:", error);
       alert("Error en actualitzar l'assistència.");
+    }
+  };
+
+  const toggleAudio = (url: string, title: string) => {
+    if (activeAudio?.url === url) {
+      setActiveAudio(null);
+    } else {
+      setActiveAudio({ url, title });
     }
   };
 
@@ -219,33 +229,53 @@ export default function Rehearsal({ user }: RehearsalProps) {
                   </div>
                 ) : (
                   rehearsalSongs.map((song) => {
-                    // Find the best PDF for the user's instrument
-                    let targetPdfUrl = song.pdfUrl; // Fallback to legacy single PDF
-                    if (song.pdfs && song.pdfs.length > 0) {
-                      const instrumentPdf = song.pdfs.find(p => p.instrument.toLowerCase() === user.instrument?.toLowerCase());
-                      const generalPdf = song.pdfs.find(p => p.instrument.toLowerCase() === 'general');
-                      targetPdfUrl = instrumentPdf?.url || generalPdf?.url || song.pdfs[0].url;
-                    }
+                    const instrumentPdf = song.pdfs?.find(p => p.instrument.toLowerCase() === user.instrument?.toLowerCase());
+                    const otherPdfs = song.pdfs?.filter(p => p.instrument.toLowerCase() !== user.instrument?.toLowerCase()) || [];
 
                     return (
-                      <div key={song.id} className="flex items-center justify-between p-4 bg-[#f8f6f6] rounded-lg border border-[#d44211]/5 hover:border-[#d44211]/20 transition-all group">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 flex items-center justify-center bg-[#d44211]/10 text-[#d44211] rounded-full group-hover:bg-[#d44211] group-hover:text-white transition-colors">
-                            <FileText size={20} />
+                      <div key={song.id} className="flex flex-col p-4 bg-[#f8f6f6] rounded-lg border border-[#d44211]/5 hover:border-[#d44211]/20 transition-all group">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 flex items-center justify-center bg-[#d44211]/10 text-[#d44211] rounded-full group-hover:bg-[#d44211] group-hover:text-white transition-colors">
+                              <FileText size={18} />
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-900 leading-tight">{song.title}</p>
+                              <p className="text-xs text-slate-500">{song.style || song.composer || 'Sense estil'}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-bold text-slate-900 leading-tight">{song.title}</p>
-                            <p className="text-xs text-slate-500">{song.style || song.composer || 'Sense estil'}</p>
+                          
+                          <div className="flex gap-2">
+                            {song.mp3_url && (
+                              <button 
+                                onClick={() => toggleAudio(song.mp3_url!, song.title)}
+                                className={`p-2 rounded-lg transition-colors ${activeAudio?.url === song.mp3_url ? 'bg-[#d44211] text-white shadow-lg' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
+                                title="Reproduïr Àudio"
+                              >
+                                {activeAudio?.url === song.mp3_url ? <Pause size={16} /> : <Play size={16} />}
+                              </button>
+                            )}
+                            {song.youtube_url && (
+                              <a href={song.youtube_url} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors" title="Veure a YouTube">
+                                <PlayCircle size={16} />
+                              </a>
+                            )}
                           </div>
                         </div>
-                        {targetPdfUrl ? (
-                          <a href={targetPdfUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[#d44211] font-medium hover:underline">
-                            <span className="text-sm hidden sm:inline">Veure Partitura</span>
-                            <ExternalLink size={18} />
-                          </a>
-                        ) : (
-                          <span className="text-xs text-slate-400 italic">Sense PDF</span>
-                        )}
+
+                        <div className="flex flex-wrap gap-2">
+                          {instrumentPdf && (
+                            <a href={instrumentPdf.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-[#d44211] text-white rounded-lg text-xs font-bold hover:scale-105 transition-transform shadow-sm">
+                              <FileText size={14} /> El meu instrument ({instrumentPdf.instrument})
+                            </a>
+                          )}
+                          {otherPdfs.map((pdf, idx) => (
+                            <a key={idx} href={pdf.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors">
+                              <FileText size={14} /> {pdf.instrument}
+                            </a>
+                          ))}
+                          {!song.pdfs?.length && <span className="text-xs text-slate-400 italic">Sense partitures PDF</span>}
+                        </div>
                       </div>
                     );
                   })
@@ -343,6 +373,36 @@ export default function Rehearsal({ user }: RehearsalProps) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Audio Player Sticky */}
+      {activeAudio && (
+        <div className="fixed bottom-20 left-4 right-4 md:bottom-24 md:left-auto md:right-8 md:w-96 bg-white border-2 border-[#d44211] shadow-2xl rounded-2xl z-40 animate-in slide-in-from-bottom-4 duration-300">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="w-10 h-10 bg-[#d44211]/10 rounded-lg flex items-center justify-center text-[#d44211] flex-shrink-0 animate-pulse">
+                  <Headphones size={20} />
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-xs font-bold text-[#d44211] uppercase tracking-wider">S'està reproduint</p>
+                  <p className="text-sm font-black text-slate-900 truncate">{activeAudio.title}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setActiveAudio(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <audio 
+              src={activeAudio.url} 
+              controls 
+              autoPlay 
+              className="w-full h-10 custom-audio-player"
+            />
           </div>
         </div>
       )}
