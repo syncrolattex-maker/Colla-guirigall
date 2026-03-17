@@ -373,13 +373,14 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                       value={newEvent.type} 
                       onChange={e => {
                         const type = e.target.value;
-                        const location = type === 'Assaig' ? 'Plaça Numero 8, 7A, 46290, Valencia' : newEvent.location;
+                        const location = type.startsWith('Assaig') ? 'Plaça Numero 8, 7A, 46290, Valencia' : newEvent.location;
                         setNewEvent({...newEvent, type, location});
                       }} 
                       className="w-full p-3 border border-slate-200 rounded-xl focus:ring-[#d44211] focus:border-[#d44211] bg-white"
                     >
                       <option value="Actuació">Actuació</option>
-                      <option value="Assaig">Assaig</option>
+                      <option value="Assaig Colleta">Assaig Colleta</option>
+                      <option value="Assaig Cambra">Assaig Cambra</option>
                     </select>
                   </div>
                   <div>
