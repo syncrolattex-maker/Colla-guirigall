@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, CheckCircle, XCircle, FileText, ExternalLink, Info, MapPin, Edit, X, Search, Headphones, PlayCircle, Play, Pause, Trash2, Plus } from 'lucide-react';
+import { Calendar as CalendarIcon, CheckCircle, XCircle, FileText, ExternalLink, Info, MapPin, Edit, X, Search, Headphones, PlayCircle, Play, Pause, Trash2, Plus, Users } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { UserData } from '../App';
 
@@ -32,9 +32,23 @@ interface Song {
   youtube_url?: string;
 }
 
+interface DBUser {
+  id: string;
+  nombre: string;
+  instrumento: string;
+}
+
+interface DBAttendance {
+  eventid: number;
+  userid: string;
+  status: string;
+}
+
 export default function Rehearsal({ user }: RehearsalProps) {
   const [rehearsals, setRehearsals] = useState<AppEvent[]>([]);
   const [attendances, setAttendances] = useState<Record<number, string | null>>({});
+  const [allAttendances, setAllAttendances] = useState<DBAttendance[]>([]);
+  const [users, setUsers] = useState<DBUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [allSongs, setAllSongs] = useState<Song[]>([]);
   const [isEditingRepertoire, setIsEditingRepertoire] = useState(false);
@@ -46,6 +60,12 @@ export default function Rehearsal({ user }: RehearsalProps) {
     const { data, error } = await supabase.from('songs').select('*');
     if (error) console.error("Error fetching songs:", error);
     else setAllSongs(data || []);
+  };
+
+  const fetchUsers = async () => {
+    const { data, error } = await supabase.from('users').select('id, nombre, instrumento');
+    if (error) console.error("Error fetching users:", error);
+    else setUsers(data || []);
   };
 
   const fetchNextRehearsal = async () => {
@@ -82,6 +102,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
 
   useEffect(() => {
     fetchSongs();
+    fetchUsers();
     fetchNextRehearsal();
     cleanupPastRehearsals();
 
@@ -93,6 +114,38 @@ export default function Rehearsal({ user }: RehearsalProps) {
       supabase.removeChannel(eventsChannel);
     };
   }, []);
+
+  useEffect(() => {
+    if (rehearsals.length === 0) return;
+
+    const attendancesChannel = supabase.channel('public:attendances_all')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'attendances' 
+      }, () => {
+        fetchAllAttendances();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(attendancesChannel);
+    };
+  }, [rehearsals]);
+
+  const fetchAllAttendances = async () => {
+      const { data, error } = await supabase
+        .from('attendances')
+        .select('eventid, userid, status')
+        .in('eventid', rehearsals.map(r => r.id))
+        .eq('status', 'Vull anar-hi');
+        
+      if (error) {
+        console.error("Error fetching all attendances:", error);
+      } else {
+        setAllAttendances(data || []);
+      }
+    };
 
   useEffect(() => {
     if (rehearsals.length === 0) return;
@@ -116,6 +169,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
     };
 
     fetchAttendance();
+    fetchAllAttendances();
   }, [rehearsals, user.uid]);
 
   const handleAttendance = async (eventId: number, status: 'Vull anar-hi' | 'No puc') => {
@@ -128,6 +182,7 @@ export default function Rehearsal({ user }: RehearsalProps) {
       }, { onConflict: 'eventid, userid' });
       if (error) throw error;
       setAttendances(prev => ({ ...prev, [eventId]: status }));
+      fetchAllAttendances();
     } catch (error) {
       console.error("Error updating attendance:", error);
       alert("Error en actualitzar l'assistència.");
@@ -264,88 +319,113 @@ export default function Rehearsal({ user }: RehearsalProps) {
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold uppercase tracking-wider text-[#d44211]/80">Repertori i Scores</h3>
-                      {user.role === 'admin' && (
-                        <button 
-                          onClick={() => {
-                            setSelectedSongIds(rehearsal.repertoireids || []);
-                            setIsEditingRepertoire(rehearsal.id as any);
-                          }}
-                          className="text-xs font-bold text-[#d44211] hover:text-[#d44211]/80 flex items-center gap-1 bg-[#d44211]/10 px-3 py-1.5 rounded-lg transition-colors border border-[#d44211]/20"
-                        >
-                          <Plus size={14} /> <Edit size={14} /> Gestionar Repertori
-                        </button>
-                      )}
-                    </div>
-                    <div className="grid gap-3">
-                      {rehearsalSongs.length === 0 ? (
-                        <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 text-center text-slate-500 text-sm">
-                          No s'ha assignat cap obra per a aquest assaig.
-                        </div>
-                      ) : (
-                        rehearsalSongs.map((song) => {
-                          const instrumentPdf = song.pdfs?.find(p => p.instrument.toLowerCase() === user.instrument?.toLowerCase());
-                          const otherPdfs = song.pdfs?.filter(p => p.instrument.toLowerCase() !== user.instrument?.toLowerCase()) || [];
+                  <div className="grid md:grid-cols-2 gap-8">
+                    {/* Repertoire Column */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-[#d44211]/80 flex items-center gap-2">
+                          <FileText size={16} /> Repertori i Scores
+                        </h3>
+                        {user.role === 'admin' && (
+                          <button 
+                            onClick={() => {
+                              setSelectedSongIds(rehearsal.repertoireids || []);
+                              setIsEditingRepertoire(rehearsal.id as any);
+                            }}
+                            className="text-xs font-bold text-[#d44211] hover:text-[#d44211]/80 flex items-center gap-1 bg-[#d44211]/10 px-3 py-1.5 rounded-lg transition-colors border border-[#d44211]/20"
+                          >
+                            <Plus size={14} /> <Edit size={14} /> Gestionar
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid gap-3">
+                        {rehearsalSongs.length === 0 ? (
+                          <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 text-center text-slate-500 text-sm">
+                            No s'ha assignat repertori.
+                          </div>
+                        ) : (
+                          rehearsalSongs.map((song) => {
+                            const instrumentPdf = song.pdfs?.find(p => p.instrument.toLowerCase() === user.instrument?.toLowerCase());
+                            const otherPdfs = song.pdfs?.filter(p => p.instrument.toLowerCase() !== user.instrument?.toLowerCase()) || [];
 
-                          return (
-                            <div key={song.id} className="flex flex-col p-4 bg-[#f8f6f6] rounded-lg border border-[#d44211]/5 hover:border-[#d44211]/20 transition-all group">
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 flex items-center justify-center bg-[#d44211]/10 text-[#d44211] rounded-full group-hover:bg-[#d44211] group-hover:text-white transition-colors">
-                                    <FileText size={18} />
+                            return (
+                              <div key={song.id} className="flex flex-col p-3 bg-[#f8f6f6] rounded-lg border border-[#d44211]/5 group">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2 overflow-hidden">
+                                    <FileText size={14} className="text-[#d44211] flex-shrink-0" />
+                                    <p className="font-bold text-slate-900 text-sm truncate">{song.title}</p>
                                   </div>
-                                  <div>
-                                    <p className="font-bold text-slate-900 leading-tight">{song.title}</p>
-                                    <p className="text-xs text-slate-500">{song.style || song.composer || 'Sense estil'}</p>
+                                  <div className="flex gap-1">
+                                    {song.mp3_url && (
+                                      <button onClick={() => toggleAudio(song.mp3_url!, song.title)} className={`p-1.5 rounded transition-colors ${activeAudio?.url === song.mp3_url ? 'bg-[#d44211] text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
+                                        {activeAudio?.url === song.mp3_url ? <Pause size={12} /> : <Play size={12} />}
+                                      </button>
+                                    )}
+                                    {user.role === 'admin' && (
+                                      <button onClick={() => handleRemoveFromRepertoire(rehearsal.id, song.id)} className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100">
+                                        <Trash2 size={12} />
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
-                                
-                                <div className="flex gap-2">
-                                  {song.mp3_url && (
-                                    <button 
-                                      onClick={() => toggleAudio(song.mp3_url!, song.title)}
-                                      className={`p-2 rounded-lg transition-colors ${activeAudio?.url === song.mp3_url ? 'bg-[#d44211] text-white shadow-lg' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
-                                      title="Reproduïr Àudio"
-                                    >
-                                      {activeAudio?.url === song.mp3_url ? <Pause size={16} /> : <Play size={16} />}
-                                    </button>
-                                  )}
-                                  {song.youtube_url && (
-                                    <a href={song.youtube_url} target="_blank" rel="noopener noreferrer" className="p-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors" title="Veure a YouTube">
-                                      <PlayCircle size={16} />
+                                <div className="flex flex-wrap gap-1">
+                                  {instrumentPdf && (
+                                    <a href={instrumentPdf.url} target="_blank" rel="noopener noreferrer" className="px-2 py-0.5 bg-[#d44211] text-white rounded text-[10px] font-bold">
+                                      Meu ({instrumentPdf.instrument})
                                     </a>
                                   )}
-                                  {user.role === 'admin' && (
-                                    <button 
-                                      onClick={() => handleRemoveFromRepertoire(rehearsal.id, song.id)}
-                                      className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
-                                      title="Treure de l'assaig"
-                                    >
-                                      <Trash2 size={16} />
-                                    </button>
-                                  )}
+                                  {otherPdfs.slice(0, 2).map((pdf, idx) => (
+                                    <a key={idx} href={pdf.url} target="_blank" rel="noopener noreferrer" className="px-2 py-0.5 bg-white border border-slate-200 text-slate-500 rounded text-[10px] font-bold">
+                                      {pdf.instrument}
+                                    </a>
+                                  ))}
+                                  {otherPdfs.length > 2 && <span className="text-[10px] text-slate-400">+{otherPdfs.length - 2}</span>}
                                 </div>
                               </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
 
-                              <div className="flex flex-wrap gap-2">
-                                {instrumentPdf && (
-                                  <a href={instrumentPdf.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-[#d44211] text-white rounded-lg text-xs font-bold hover:scale-105 transition-transform shadow-sm">
-                                    <FileText size={14} /> El meu instrument ({instrumentPdf.instrument})
-                                  </a>
-                                )}
-                                {otherPdfs.map((pdf, idx) => (
-                                  <a key={idx} href={pdf.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors">
-                                    <FileText size={14} /> {pdf.instrument}
-                                  </a>
-                                ))}
-                                {!song.pdfs?.length && <span className="text-xs text-slate-400 italic">Sense partitures PDF</span>}
+                    {/* Attendees Column */}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-[#d44211]/80 flex items-center gap-2">
+                          <Users size={16} /> Qui hi va?
+                        </h3>
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                          {allAttendances.filter(a => a.eventid === rehearsal.id).length} confirmats
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 rounded-xl border border-slate-100 h-full max-h-[300px] overflow-y-auto">
+                        <div className="p-2 space-y-1">
+                          {(() => {
+                            const eventAttendees = allAttendances
+                              .filter(a => a.eventid === rehearsal.id)
+                              .map(a => users.find(u => u.id === a.userid))
+                              .filter(Boolean) as DBUser[];
+
+                            if (eventAttendees.length === 0) {
+                              return <p className="text-center py-8 text-slate-400 text-sm">Encara no hi ha confirmacions.</p>;
+                            }
+
+                            return eventAttendees.map((attendee) => (
+                              <div key={attendee.id} className="flex items-center justify-between p-2 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-full bg-[#d44211]/10 flex items-center justify-center text-[#d44211] font-bold text-xs">
+                                    {attendee.nombre[0]}
+                                  </div>
+                                  <p className="text-sm font-semibold text-slate-700">{attendee.nombre}</p>
+                                </div>
+                                <span className="text-[10px] uppercase font-bold text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-100">
+                                  {attendee.instrumento}
+                                </span>
                               </div>
-                            </div>
-                          );
-                        })
-                      )}
+                            ));
+                          })()}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </section>
