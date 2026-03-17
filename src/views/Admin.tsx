@@ -35,7 +35,7 @@ export default function Admin({ user }: AdminProps) {
     const { data, error } = await supabase
       .from('events')
       .select('*')
-      .eq('type', 'Actuació')
+      .in('type', ['Actuació', 'Intercanvi', 'Final de curs'])
       .gte('date', new Date(now - 86400000).toISOString())
       .order('date', { ascending: true });
     if (error) console.error("Error fetching events:", error);
@@ -148,7 +148,7 @@ export default function Admin({ user }: AdminProps) {
       if (eventError) throw eventError;
 
       const event = events.find(e => e.id === selectedEventId);
-      const eventTitle = event?.title || 'Actuació';
+      const eventTitle = event?.title || event?.type || 'Esdeveniment';
       const eventDate = event ? new Date(event.date).toLocaleString('ca-ES', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '';
 
       const notifications = combinedData
@@ -236,14 +236,14 @@ export default function Admin({ user }: AdminProps) {
             <p className="text-slate-500">Revisió de disponibilitat i confirmació final per a les actuacions</p>
           </div>
           <div className="relative min-w-[300px]">
-            <label className="text-xs font-bold text-[#d44211] uppercase mb-1 block">Selecciona l'actuació</label>
+            <label className="text-xs font-bold text-[#d44211] uppercase mb-1 block">Selecciona l'esdeveniment</label>
             <div className="relative">
               <select 
                 value={selectedEventId}
                 onChange={(e) => setSelectedEventId(e.target.value)}
                 className="w-full bg-white border border-[#d44211]/20 rounded-lg px-4 py-2.5 text-sm appearance-none focus:ring-2 focus:ring-[#d44211] focus:border-[#d44211] outline-none"
               >
-                {events.length === 0 && <option value="">Cap actuació propera</option>}
+                {events.length === 0 && <option value="">Cap esdeveniment proper</option>}
                 {events.map(event => (
                   <option key={event.id} value={event.id}>
                     {event.title} - {formatDate(event.date)}

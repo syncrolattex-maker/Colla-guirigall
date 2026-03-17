@@ -18,7 +18,7 @@ export default function BottomNav({ currentView, setCurrentView }: { currentView
       </button>
       <button onClick={() => setCurrentView('rehearsal')} className={`flex flex-col items-center gap-1 ${currentView === 'rehearsal' ? 'text-[#d44211]' : 'text-slate-400'}`}>
         <Users size={24} />
-        <span className="text-[10px] font-bold">Assajos</span>
+        <span className="text-[10px] font-bold">Obres i Assajos</span>
       </button>
     </div>
   );
