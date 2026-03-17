@@ -135,6 +135,12 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
 
   const handleAttendance = async (eventId: number, status: 'Vull anar-hi' | 'No puc' | 'Pendent', targetUserId: string = user.uid) => {
     try {
+      const event = events.find(e => e.id === eventId);
+      if (event?.type === 'Actuació' && event.ispublished && user.role !== 'admin') {
+        alert("La llista de convocats ja ha estat publicada. No es pot canviar l'assistència.");
+        return;
+      }
+
       const currentConvocat = allAttendances[eventId]?.[targetUserId]?.convocat || false;
       const { error } = await supabase.from('attendances').upsert({
         eventid: eventId,
@@ -267,19 +273,27 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                         >
                           Veure Detalls
                         </button>
-                        {myAttendance === 'Vull anar-hi' ? (
-                          <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-200 transition-colors">
-                            Cancel·lar assistència
-                          </button>
+                        
+                        {/* Only allow editing attendance if it's not a published Actuació (unless admin) */}
+                        {!(event.type === 'Actuació' && event.ispublished && user.role !== 'admin') ? (
+                          myAttendance === 'Vull anar-hi' ? (
+                            <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-lg text-sm hover:bg-emerald-50 hover:text-emerald-700 transition-colors">
+                              Cancel·lar assistència
+                            </button>
+                          ) : (
+                            <>
+                              <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 border border-slate-200 text-slate-600 font-bold rounded-lg text-sm hover:bg-red-50 hover:text-red-700 transition-colors">
+                                No puc
+                              </button>
+                              <button onClick={() => handleAttendance(event.id, 'Vull anar-hi')} className="px-6 py-2 bg-[#d44211] text-white font-bold rounded-lg text-sm hover:bg-[#d44211]/90 transition-colors shadow-sm shadow-[#d44211]/20">
+                                Vull anar-hi
+                              </button>
+                            </>
+                          )
                         ) : (
-                          <>
-                            <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 border border-slate-200 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-50 transition-colors">
-                              No puc
-                            </button>
-                            <button onClick={() => handleAttendance(event.id, 'Vull anar-hi')} className="px-6 py-2 bg-[#d44211] text-white font-bold rounded-lg text-sm hover:bg-[#d44211]/90 transition-colors shadow-sm shadow-[#d44211]/20">
-                              Vull anar-hi
-                            </button>
-                          </>
+                          <span className="text-xs font-bold text-slate-400 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                            Inscripció tancada
+                          </span>
                         )}
                       </div>
                     </div>
