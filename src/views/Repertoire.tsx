@@ -32,6 +32,7 @@ export default function Repertoire({ user }: RepertoireProps) {
   const [uploading, setUploading] = useState(false);
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [existingPdfs, setExistingPdfs] = useState<SongPdf[]>([]);
+  const [removeMp3, setRemoveMp3] = useState(false);
   
   const [newSong, setNewSong] = useState({
     title: '',
@@ -85,7 +86,7 @@ export default function Repertoire({ user }: RepertoireProps) {
       
       // Keep existing PDFs that weren't deleted
       let pdfs: SongPdf[] = [...existingPdfs];
-      let mp3_url = editingSong?.mp3_url || '';
+      let mp3_url = removeMp3 ? '' : (editingSong?.mp3_url || '');
 
       // Upload new PDFs
       for (const pdf of pdfFiles) {
@@ -183,6 +184,7 @@ export default function Repertoire({ user }: RepertoireProps) {
       youtubeUrl: song.youtube_url || ''
     });
     setExistingPdfs(song.pdfs || []);
+    setRemoveMp3(false);
     setIsAdding(true);
   };
 
@@ -193,6 +195,7 @@ export default function Repertoire({ user }: RepertoireProps) {
     setPdfFiles([]);
     setExistingPdfs([]);
     setMp3File(null);
+    setRemoveMp3(false);
   };
 
   const toggleAudio = (url: string, title: string) => {
@@ -445,18 +448,52 @@ export default function Repertoire({ user }: RepertoireProps) {
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-1">Àudio (MP3)</label>
-                      <div className="flex items-center gap-2">
-                        <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 p-3 border border-dashed border-slate-300 rounded-xl hover:border-[#d44211] hover:bg-[#d44211]/5 transition-colors">
-                          <Upload size={18} className="text-slate-400" />
-                          <span className="text-sm text-slate-600">{mp3File ? mp3File.name : 'Seleccionar MP3'}</span>
-                          <input type="file" accept=".mp3,audio/*" className="hidden" onChange={(e) => setMp3File(e.target.files?.[0] || null)} />
-                        </label>
-                        {mp3File && (
-                          <button type="button" onClick={() => setMp3File(null)} className="p-3 text-red-500 hover:bg-red-50 rounded-xl">
+                      
+                      {editingSong?.mp3_url && !removeMp3 ? (
+                        <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-100 rounded-xl mb-2">
+                          <div className="flex items-center gap-2">
+                            <Volume2 size={18} className="text-blue-600" />
+                            <span className="text-sm font-bold text-blue-700 truncate max-w-[200px]">Àudio actual</span>
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => setRemoveMp3(true)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Eliminar àudio actual"
+                          >
                             <X size={18} />
                           </button>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {removeMp3 && (
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-xs font-bold text-red-500 flex items-center gap-1">
+                                <X size={12} /> L'àudio actual s'eliminarà
+                              </span>
+                              <button 
+                                type="button" 
+                                onClick={() => setRemoveMp3(false)}
+                                className="text-[10px] font-bold text-blue-600 hover:underline"
+                              >
+                                Desfer eliminació
+                              </button>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 p-3 border border-dashed border-slate-300 rounded-xl hover:border-[#d44211] hover:bg-[#d44211]/5 transition-colors">
+                              <Upload size={18} className="text-slate-400" />
+                              <span className="text-sm text-slate-600">{mp3File ? mp3File.name : 'Puja un nou MP3'}</span>
+                              <input type="file" accept=".mp3,audio/*" className="hidden" onChange={(e) => setMp3File(e.target.files?.[0] || null)} />
+                            </label>
+                            {mp3File && (
+                              <button type="button" onClick={() => setMp3File(null)} className="p-3 text-red-500 hover:bg-red-50 rounded-xl">
+                                <X size={18} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-1">Enllaç YouTube</label>
