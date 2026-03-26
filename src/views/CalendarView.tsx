@@ -20,6 +20,8 @@ interface AppEvent {
   createdat: string;
   ispublished?: boolean;
   repertoireids?: number[];
+  is_cancelled?: boolean;
+  cancellation_reason?: string;
 }
 
 interface Song {
@@ -44,6 +46,7 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
   const [isAdding, setIsAdding] = useState(false);
   const [editingEvent, setEditingEvent] = useState<AppEvent | null>(null);
   const [viewingEvent, setViewingEvent] = useState<AppEvent | null>(null);
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [newEvent, setNewEvent] = useState({
     title: '',
     type: 'Actuació',
@@ -206,6 +209,53 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
     }
   };
 
+  const handleCancelEvent = async (eventId: number) => {
+    const reason = prompt("Indica el motiu de la cancel·lació (opcional):");
+    if (reason === null) return; // User cancelled the prompt
+
+    try {
+      // 1. Update event status
+      const { error: updateError } = await supabase
+        .from('events')
+        .update({ 
+          is_cancelled: true, 
+          cancellation_reason: reason || 'L\'esdeveniment ha estat cancel·lat.' 
+        })
+        .eq('id', eventId);
+      
+      if (updateError) throw updateError;
+
+      // 2. Notify all attendees (anyone who said "Vull anar-hi" or "Pendent")
+      const event = events.find(e => e.id === eventId);
+      const eventTitle = event?.title || 'Esdeveniment';
+      const eventAtts = allAttendances[eventId] || {};
+      
+      // Get all users who have an attendance record for this event (except those who said "No puc")
+      const userIdsToNotify = Object.keys(eventAtts).filter(uid => eventAtts[uid].status !== 'No puc');
+      
+      // If no attendance records yet, we might want to notify everyone, but usually base it on attendances
+      if (userIdsToNotify.length > 0) {
+        const notifications = userIdsToNotify.map(uid => ({
+          userid: uid,
+          title: `🚫 CANCEL·LAT: ${eventTitle}`,
+          message: reason || `S'ha cancel·lat l'esdeveniment del dia ${formatDate(event?.date || '')}.`,
+          link: 'calendar',
+          eventid: eventId,
+          read: false
+        }));
+
+        const { error: notifError } = await supabase.from('notifications').insert(notifications);
+        if (notifError) console.error("Error sending notifications:", notifError);
+      }
+
+      alert("Esdeveniment cancel·lat i assistents notificats.");
+      fetchEvents();
+    } catch (error) {
+      console.error("Error cancelling event:", error);
+      alert("Error en cancel·lar l'esdeveniment.");
+    }
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -214,15 +264,27 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
     }).format(date);
   };
 
+  const now = new Date();
+  const upcomingEvents = events.filter(e => new Date(e.date) >= now);
+  const pastEvents = events.filter(e => new Date(e.date) < now).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  const displayedEvents = activeTab === 'upcoming' ? upcomingEvents : pastEvents;
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 pb-24 md:pb-8">
       <div className="flex-1">
         <div className="flex border-b border-[#d44211]/10 mb-6 gap-8 justify-between items-center">
           <div className="flex gap-8">
-            <button className="flex flex-col items-center justify-center border-b-[3px] border-[#d44211] text-slate-900 pb-3 pt-2">
+            <button 
+              onClick={() => setActiveTab('upcoming')}
+              className={`flex flex-col items-center justify-center border-b-[3px] pb-3 pt-2 transition-colors ${activeTab === 'upcoming' ? 'border-[#d44211] text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
               <span className="text-sm font-bold tracking-wide">Pròxims</span>
             </button>
-            <button className="flex flex-col items-center justify-center border-b-[3px] border-transparent text-slate-500 hover:text-slate-700 pb-3 pt-2">
+            <button 
+              onClick={() => setActiveTab('past')}
+              className={`flex flex-col items-center justify-center border-b-[3px] pb-3 pt-2 transition-colors ${activeTab === 'past' ? 'border-[#d44211] text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
               <span className="text-sm font-bold tracking-wide">Passats</span>
             </button>
           </div>
@@ -236,19 +298,21 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
           )}
         </div>
 
-        <h1 className="text-2xl font-bold mb-6 text-slate-900">Pròximes actuacions i assajos</h1>
+        <h1 className="text-2xl font-bold mb-6 text-slate-900">
+          {activeTab === 'upcoming' ? 'Pròximes actuacions i assajos' : 'Esdeveniments passats'}
+        </h1>
 
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#d44211]"></div>
           </div>
-        ) : events.length === 0 ? (
+        ) : displayedEvents.length === 0 ? (
           <div className="text-center py-12 text-slate-500 bg-white rounded-xl border border-slate-200">
-            No hi ha esdeveniments programats.
+            {activeTab === 'upcoming' ? 'No hi ha esdeveniments programats.' : 'No hi ha esdeveniments passats.'}
           </div>
         ) : (
           <div className="flex flex-col gap-6">
-            {events.map(event => {
+            {displayedEvents.map(event => {
               const eventAtts = allAttendances[event.id] || {};
               const myAttendance = eventAtts[user.uid]?.status;
               const amIConvocat = eventAtts[user.uid]?.convocat;
@@ -282,8 +346,22 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                         )}
                       </div>
                       <div className="flex items-center gap-1">
+                        {event.is_cancelled && (
+                          <span className="px-3 py-1 bg-red-600 text-white text-xs font-black uppercase tracking-widest rounded-full flex items-center gap-1.5 shadow-lg shadow-red-600/20 animate-pulse">
+                            🚫 Cancel·lat
+                          </span>
+                        )}
                         {user.role === 'admin' && (
                           <>
+                            {!event.is_cancelled && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleCancelEvent(event.id); }}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                                title="Cancel·lar esdeveniment"
+                              >
+                                <X size={20} className="stroke-[3]" />
+                              </button>
+                            )}
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleOpenEdit(event); }}
                               className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"
@@ -300,27 +378,27 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                             </button>
                           </>
                         )}
-                        {event.ispublished && amIConvocat && myAttendance !== 'No puc' && (
+                        {event.ispublished && amIConvocat && myAttendance !== 'No puc' && !event.is_cancelled && (
                           <span className="px-3 py-1 bg-[#d44211] text-white text-xs font-bold rounded-full flex items-center gap-1 shadow-sm shadow-[#d44211]/20">
                             <CheckCircle size={12} /> Convocat
                           </span>
                         )}
-                        {event.ispublished && !amIConvocat && myAttendance === 'Vull anar-hi' && (
+                        {event.ispublished && !amIConvocat && myAttendance === 'Vull anar-hi' && !event.is_cancelled && (
                           <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-bold rounded-full">
                             No convocat
                           </span>
                         )}
-                        {!event.ispublished && myAttendance === 'Vull anar-hi' && (
+                        {!event.ispublished && myAttendance === 'Vull anar-hi' && !event.is_cancelled && (
                           <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full flex items-center gap-1">
                             <CheckCircle size={12} /> Inscrit
                           </span>
                         )}
-                        {myAttendance === 'No puc' && (
+                        {myAttendance === 'No puc' && !event.is_cancelled && (
                           <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
                             No assisteix
                           </span>
                         )}
-                        {!myAttendance && (
+                        {!myAttendance && !event.is_cancelled && (
                           <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
                             Pendent
                           </span>
@@ -344,8 +422,8 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                           Veure Detalls
                         </button>
                         
-                        {/* Only allow editing attendance if it's not a published Actuació (unless admin) */}
-                        {!(event.type === 'Actuació' && event.ispublished && user.role !== 'admin') ? (
+                        {/* Only allow editing attendance if it's not a published Actuació (unless admin) AND not cancelled */}
+                        {!(event.type === 'Actuació' && event.ispublished && user.role !== 'admin') && !event.is_cancelled ? (
                           myAttendance === 'Vull anar-hi' ? (
                             <button onClick={() => handleAttendance(event.id, 'No puc')} className="px-4 py-2 bg-slate-100 text-slate-600 font-bold rounded-lg text-sm hover:bg-emerald-50 hover:text-emerald-700 transition-colors">
                               Cancel·lar assistència
@@ -360,6 +438,10 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                               </button>
                             </>
                           )
+                        ) : event.is_cancelled ? (
+                          <span className="text-xs font-bold text-red-500 bg-red-50 px-3 py-2 rounded-lg border border-red-100">
+                            Esdeveniment cancel·lat
+                          </span>
                         ) : (
                           <span className="text-xs font-bold text-slate-400 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
                             Inscripció tancada
@@ -403,6 +485,15 @@ export default function CalendarView({ user, selectedEventId, setSelectedEventId
                     </div>
                   )}
                 </div>
+                {viewingEvent.is_cancelled && (
+                  <div className="mb-4 p-4 bg-red-50 border-2 border-red-100 rounded-2xl flex items-start gap-3">
+                    <span className="text-2xl mt-0.5">🚫</span>
+                    <div>
+                      <h4 className="font-black text-red-600 uppercase text-xs tracking-widest mb-1">Esdeveniment Cancel·lat</h4>
+                      <p className="text-red-700 font-bold text-sm">{viewingEvent.cancellation_reason || 'L\'esdeveniment ha estat cancel·lat.'}</p>
+                    </div>
+                  </div>
+                )}
                 {viewingEvent.notes && (
                   <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
                     <p className="text-slate-700 whitespace-pre-wrap">{viewingEvent.notes}</p>

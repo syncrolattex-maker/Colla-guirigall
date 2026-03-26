@@ -142,7 +142,7 @@ export default function Repertoire({ user }: RepertoireProps) {
       };
 
       if (editingSong) {
-        console.log("Saving changes to DB...");
+        console.log("Saving changes to DB for song:", editingSong.id);
         const { error: updateError } = await supabase
           .from('songs')
           .update(songData)
@@ -151,7 +151,7 @@ export default function Repertoire({ user }: RepertoireProps) {
         if (updateError) throw updateError;
         console.log("Song updated successfully!");
       } else {
-        console.log("Inserting song into DB...");
+        console.log("Inserting new song into DB...");
         const { error: insertError } = await supabase
           .from('songs')
           .insert([songData]);
@@ -164,7 +164,7 @@ export default function Repertoire({ user }: RepertoireProps) {
       await fetchSongs();
     } catch (error: any) {
       console.error("Error saving song:", error);
-      alert(`Error en desar la cançó: ${error.message || error.error_description || 'Error desconegut'}`);
+      alert(`Error en desar la cançó: ${error.message || error.error_description || JSON.stringify(error)}`);
     } finally {
       setUploading(false);
     }

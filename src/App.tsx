@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bell, Menu, Music, LogOut, X } from 'lucide-react';
+import { Music, LogOut, X } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import Login from './components/Login';
 import Dashboard from './views/Dashboard';
@@ -22,7 +22,6 @@ export interface UserData {
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [updatingProfile, setUpdatingProfile] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
@@ -242,24 +241,11 @@ export default function App() {
           <button onClick={handleLogout} className="w-10 h-10 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 transition-colors" title="Tancar sessió">
             <LogOut size={20} />
           </button>
-          <button className="md:hidden text-slate-900" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
-            <Menu size={24} />
-          </button>
+          {/* Hamburger hidden on mobile — navigation handled by BottomNav */}
         </div>
       </header>
 
-      {/* Mobile Menu Dropdown */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden absolute top-[73px] left-0 right-0 bg-white border-b border-[#d44211]/10 shadow-lg z-40 flex flex-col">
-          <button onClick={() => { setCurrentView('dashboard'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Inici</button>
-          <button onClick={() => { setCurrentView('repertoire'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Repertori</button>
-          <button onClick={() => { setCurrentView('calendar'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Calendari</button>
-          <button onClick={() => { setCurrentView('rehearsal'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold border-b border-slate-100">Obres i Assajos</button>
-          {user.role === 'admin' && (
-            <button onClick={() => { setCurrentView('admin'); setIsMobileMenuOpen(false); }} className="p-4 text-left font-semibold">Admin</button>
-          )}
-        </div>
-      )}
+      {/* Mobile navigation is handled by BottomNav */}
 
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 overflow-y-auto">
@@ -323,7 +309,7 @@ export default function App() {
         </div>
       )}
 
-      <BottomNav currentView={currentView} setCurrentView={setCurrentView} />
+      <BottomNav currentView={currentView} setCurrentView={setCurrentView} userRole={user.role} />
     </div>
   );
 }

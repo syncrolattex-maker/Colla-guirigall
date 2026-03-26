@@ -117,50 +117,63 @@ export default function NotificationBell({ user, onNavigate }: { user: UserData,
       <div className="relative" ref={dropdownRef}>
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="w-10 h-10 flex items-center justify-center rounded-full bg-[#d44211]/10 text-[#d44211] hover:bg-[#d44211]/20 transition-colors relative"
+          className="w-10 h-10 flex items-center justify-center rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition-all active:scale-90 relative group shadow-sm"
         >
-          <Bell size={20} />
+          <Bell size={20} className="group-hover:rotate-12 transition-transform" />
           {unreadCount > 0 && (
-            <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white">
+            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-slate-900 text-white text-[10px] font-black flex items-center justify-center rounded-lg border-2 border-white shadow-lg animate-bounce">
               {unreadCount}
             </span>
           )}
         </button>
 
         {isOpen && (
-          <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-slate-800">Notificacions</h3>
+          <div className="absolute right-0 mt-4 w-80 glass rounded-[2rem] shadow-2xl border-white/40 overflow-hidden z-[100] animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="px-6 py-5 border-b border-slate-100/50 flex justify-between items-center bg-white/40">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Notificacions</h3>
               {unreadCount > 0 && (
-                <span className="text-xs text-[#d44211] font-medium">{unreadCount} noves</span>
+                <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-black rounded-full uppercase tracking-widest">{unreadCount} noves</span>
               )}
             </div>
-            <div className="max-h-96 overflow-y-auto">
+            
+            <div className="max-h-[28rem] overflow-y-auto custom-scrollbar">
               {notifications.length === 0 ? (
-                <div className="p-6 text-center text-slate-500 text-sm">
-                  No tens cap notificació.
+                <div className="p-12 text-center space-y-3">
+                  <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-300 mx-auto">
+                    <Bell size={24} />
+                  </div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tot al dia!</p>
+                  <p className="text-xs text-slate-500 font-medium">No tens cap notificació pendent.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100/30">
                   {notifications.map(notif => (
                     <div
                       key={notif.id}
-                      className={`p-4 hover:bg-slate-50 transition-colors flex gap-3 cursor-pointer ${!notif.read ? 'bg-[#d44211]/5' : ''}`}
+                      className={`p-6 hover:bg-primary/[0.02] transition-colors flex gap-4 cursor-pointer relative group ${!notif.read ? 'bg-primary/[0.03]' : ''}`}
                       onClick={() => handleNotificationClick(notif)}
                     >
-                      <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${!notif.read ? 'bg-[#d44211]' : 'bg-transparent'}`} />
-                      <div className="flex-1">
-                        <p className={`text-sm ${!notif.read ? 'font-bold text-slate-900' : 'font-medium text-slate-700'}`}>
+                      <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${!notif.read ? 'bg-primary ring-4 ring-primary/10' : 'bg-transparent'}`} />
+                      <div className="flex-1 space-y-1">
+                        <p className={`text-sm tracking-tight ${!notif.read ? 'font-black text-slate-900' : 'font-bold text-slate-600'}`}>
                           {notif.title}
                         </p>
-                        <p className="text-xs text-slate-500 mt-1">{notif.message}</p>
-                        <p className="text-[10px] text-slate-400 mt-2">
-                          {new Date(notif.createdat).toLocaleDateString('ca-ES', { hour: '2-digit', minute: '2-digit' })}
-                        </p>
+                        <p className="text-xs text-slate-500 font-medium leading-relaxed">{notif.message}</p>
+                        <div className="flex items-center gap-2 pt-1">
+                          <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">
+                            {new Date(notif.createdat).toLocaleDateString('ca-ES', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          {!notif.read && (
+                            <span className="w-1 h-1 rounded-full bg-slate-200" />
+                          )}
+                          {!notif.read && (
+                            <span className="text-[9px] font-black text-primary uppercase tracking-widest">Nou</span>
+                          )}
+                        </div>
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); deleteNotification(notif.id); }}
-                        className="text-slate-300 hover:text-red-500 transition-colors p-1 h-fit"
+                        className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all p-2 h-fit bg-white rounded-xl shadow-sm border border-slate-100"
                         title="Esborrar"
                       >
                         <Trash2 size={14} />
@@ -170,23 +183,49 @@ export default function NotificationBell({ user, onNavigate }: { user: UserData,
                 </div>
               )}
             </div>
+            
+            {notifications.length > 0 && (
+              <div className="p-4 bg-slate-50/50 border-t border-slate-100/50">
+                <button
+                  onClick={async () => {
+                    const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+                    if (unreadIds.length === 0) return;
+                    await supabase.from('notifications').update({ read: true }).in('id', unreadIds);
+                  }}
+                  className="w-full py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Check size={12} /> Marcar totes com llegides
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Toast for new notification */}
       {showToast && (
-        <div className="fixed bottom-4 right-4 bg-white border border-[#d44211]/20 shadow-xl rounded-xl p-4 flex items-start gap-3 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 max-w-sm">
-          <div className="w-8 h-8 rounded-full bg-[#d44211]/10 text-[#d44211] flex items-center justify-center shrink-0">
-            <Bell size={16} />
+        <div className="fixed bottom-24 md:bottom-8 right-6 left-6 md:left-auto md:w-96 glass-dark border-white/10 shadow-3xl rounded-[2rem] p-6 flex items-start gap-5 z-[200] animate-in slide-in-from-bottom-10 fade-in duration-500 overflow-hidden group">
+          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+            <Bell size={64} className="rotate-12" />
           </div>
-          <div className="flex-1">
-            <h4 className="text-sm font-bold text-slate-900">{showToast.title}</h4>
-            <p className="text-xs text-slate-600 mt-1">{showToast.message}</p>
+          
+          <div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center shrink-0 shadow-lg shadow-primary/20 relative z-10">
+            <Bell size={20} className="animate-pulse" />
           </div>
-          <button onClick={() => setShowToast(null)} className="text-slate-400 hover:text-slate-600">
-            <Trash2 size={14} className="opacity-0" /> {/* Spacer */}
+          
+          <div className="flex-1 space-y-1 relative z-10 pr-4">
+            <h4 className="text-sm font-black text-white tracking-tight">{showToast.title}</h4>
+            <p className="text-xs text-white/60 font-medium leading-relaxed">{showToast.message}</p>
+          </div>
+          
+          <button 
+            onClick={() => setShowToast(null)} 
+            className="text-white/20 hover:text-white transition-colors relative z-10 p-2"
+          >
+            <Trash2 size={16} />
           </button>
+          
+          <div className="absolute bottom-0 left-0 h-1 bg-primary group-hover:w-full transition-all duration-[5000ms] ease-linear w-0"></div>
         </div>
       )}
     </>
